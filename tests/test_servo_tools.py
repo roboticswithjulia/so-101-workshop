@@ -1,10 +1,10 @@
 import unittest
 
-import so101_bus
-from servo_config import check_config, read_config
-from servo_positions import read_positions, set_zero_positions
-from servo_scan import scan_ids
-from so101_bus import COMM_SUCCESS, decode_offset, parse_ids
+import src.so101_bus as so101_bus
+from src.servo_config import check_config, read_config
+from src.servo_positions import read_positions, set_zero_positions
+from src.servo_scan import scan_ids
+from src.so101_bus import COMM_SUCCESS, decode_offset, parse_ids
 
 COMM_RX_TIMEOUT = -6
 

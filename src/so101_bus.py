@@ -23,7 +23,7 @@ ARM_IDS = "1-6"
 MAX_ID = 252
 STEPS_PER_TURN = 4096
 
-# STS3215 register addresses (see FTSERVO_SDK.md for the full table).
+# STS3215 register addresses (see docs/FTSERVO_SDK.md for the full table).
 REG_MODEL = 3
 REG_ID = 5
 REG_BAUD_RATE = 6

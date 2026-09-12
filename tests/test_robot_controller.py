@@ -1,7 +1,7 @@
 import unittest
 
-from robot_controller import RobotController
-from mock_robot import MockRobot
+from src.robot_controller import RobotController
+from src.mock_robot import MockRobot
 
 
 class RobotControllerTests(unittest.TestCase):

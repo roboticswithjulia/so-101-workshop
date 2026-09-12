@@ -13,7 +13,6 @@ Install the dependencies first: pip install -r requirements.txt
 """
 
 import argparse
-import sys
 
 try:
     import tkinter as tk
@@ -21,8 +20,14 @@ try:
 except ImportError:  # pragma: no cover - headless machines
     tk = None
 
-from servo_positions import read_positions, set_zero_positions
-from so101_bus import ARM_IDS, DEFAULT_BAUDRATE, DEFAULT_PORT, open_bus, parse_ids
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python3 <folder>/<file>.py) as well as with python3 -m
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.servo_positions import read_positions, set_zero_positions
+from src.so101_bus import ARM_IDS, DEFAULT_BAUDRATE, DEFAULT_PORT, open_bus, parse_ids
 
 NOMS_ARTICULACIONS = {
     1: "Base",

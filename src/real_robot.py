@@ -7,8 +7,8 @@ the servos report as 2048 (the middle of their range), which is what
 
 import time
 
-from servo_positions import POSITION_MIDDLE, read_positions, set_zero_positions
-from so101_bus import COMM_SUCCESS, DEFAULT_BAUDRATE, DEFAULT_PORT, describe, discover_ports, open_bus
+from src.servo_positions import POSITION_MIDDLE, read_positions, set_zero_positions
+from src.so101_bus import COMM_SUCCESS, DEFAULT_BAUDRATE, DEFAULT_PORT, describe, discover_ports, open_bus
 
 POSITION_MAX = 4095
 

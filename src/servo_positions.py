@@ -20,10 +20,15 @@ servo stores in EEPROM, so the value survives power cycles.
 """
 
 import argparse
-import sys
 import time
 
-from so101_bus import (
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python3 <folder>/<file>.py) as well as with python3 -m
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.so101_bus import (
     ARM_IDS,
     COMM_SUCCESS,
     DEFAULT_BAUDRATE,

@@ -1,7 +1,7 @@
 import unittest
 
-import app_v2
-from test_servo_tools import FakePacketHandler, healthy_servo
+import app.app_v2 as app_v2
+from tests.test_servo_tools import FakePacketHandler, healthy_servo
 
 
 class FakePortHandler:

@@ -1,9 +1,9 @@
 import unittest
 
-import real_robot
-from real_robot import RealRobotAdapter
-from robot_controller import RobotController
-from test_servo_tools import FakePacketHandler, healthy_servo
+import src.real_robot as real_robot
+from src.real_robot import RealRobotAdapter
+from src.robot_controller import RobotController
+from tests.test_servo_tools import FakePacketHandler, healthy_servo
 
 
 class FakePortHandler:

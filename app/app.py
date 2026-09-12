@@ -1,9 +1,15 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from mock_robot import MockRobot
-from real_robot import RealRobotAdapter
-from robot_controller import RobotController
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python3 <folder>/<file>.py) as well as with python3 -m
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.mock_robot import MockRobot
+from src.real_robot import RealRobotAdapter
+from src.robot_controller import RobotController
 
 
 class RobotApp:

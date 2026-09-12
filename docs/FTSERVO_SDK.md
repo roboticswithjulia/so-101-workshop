@@ -1,6 +1,6 @@
 # FTServo_Python SDK overview
 
-Reference notes on the official Feetech Python SDK checked out in [FTServo_Python/](FTServo_Python/).
+Reference notes on the official Feetech Python SDK checked out in `FTServo_Python/` (git clone of the repository, ignored by git).
 Source: https://github.com/ftservo/FTServo_Python (MIT license, also on PyPI as `ftservo-python-sdk`).
 Requires Python 3 and `pyserial`.
 
@@ -230,15 +230,15 @@ Everything the workshop tools use (`PortHandler`, `sms_sts.ping`, `ReadPos`, `Re
 
 ## Relationship to this project
 
-The workshop tools import the SDK through [so101_bus.py](so101_bus.py), which provides
+The workshop tools import the SDK through [src/so101_bus.py](../src/so101_bus.py), which provides
 `open_bus()` (PortHandler + sms_sts), ID parsing, USB port discovery and the STS3215
 register addresses:
 
 | Tool | SDK calls used |
 |------|----------------|
-| `servo_scan.py` | `ping` on each ID and baud rate |
-| `servo_config.py` | `ping`, `read1ByteTxRx`, `read2ByteTxRx` on the configuration registers |
-| `servo_positions.py` | `ReadPosSpeed`, `ReadMoving`, `getRxPacketError` |
+| `src/servo_scan.py` | `ping` on each ID and baud rate |
+| `src/servo_config.py` | `ping`, `read1ByteTxRx`, `read2ByteTxRx` on the configuration registers |
+| `src/servo_positions.py` | `ReadPosSpeed`, `ReadMoving`, `getRxPacketError` |
 
 Things the SDK has that could be useful next:
 
