@@ -22,7 +22,7 @@ def list_serial_ports():
     ports = []
     for port in range(0, 20):
         try:
-            candidate = f"/dev/ttyUSB{port}"
+            candidate = f"/dev/ttyACM{port}"
             with serial.Serial(candidate, timeout=0.2):
                 ports.append(candidate)
         except Exception:
