@@ -141,10 +141,10 @@ Register map (`SMS_STS_*` constants, addresses in decimal):
 | 31-32 | OFS | EEPROM | Position offset (what OFSCAL writes) |
 | 33 | MODE | EEPROM | 0 position (servo) mode, 1 wheel (continuous) mode |
 | 40 | TORQUE_ENABLE | SRAM | 0 off, 1 on |
-| 41 | ACC | SRAM | Acceleration, units of 8.7 °/s² |
+| 41 | ACC | SRAM | Acceleration, units of 100 steps/s² (about 8.7 °/s²) |
 | 42-43 | GOAL_POSITION | SRAM | 0-4095 = one turn (4096 steps) |
 | 44-45 | GOAL_TIME | SRAM | Unused for STS position moves (written as 0) |
-| 46-47 | GOAL_SPEED | SRAM | Speed, units of 0.732 rpm (≈ 50 steps/s) |
+| 46-47 | GOAL_SPEED | SRAM | Speed in steps/s (50 steps/s = 0.732 rpm; the SDK example comments wrongly treat one unit as 0.732 rpm). Values below about 100 make the servo creep and judder |
 | 55 | LOCK | SRAM | 1 = EEPROM locked (default), 0 = writable |
 | 56-57 | PRESENT_POSITION | read-only | Current position |
 | 58-59 | PRESENT_SPEED | read-only | Current speed, sign-magnitude |
@@ -170,9 +170,9 @@ Helper methods:
 | `WriteSpec(id, speed, acc)` | In wheel mode: run at signed speed with the given acceleration |
 | `unLockEprom(id)` / `LockEprom(id)` | Write LOCK 0 / 1 around any EEPROM change (ID, baud, limits, offset, mode) |
 
-Rule of thumb from the examples for the time a move takes:
-`(|P1 - P0| / (V * 50)) + ((V * 50) / (A * 100)) + 0.05` seconds, with V and A the
-values passed to `WritePosEx`.
+Time a move takes, with V in steps/s and A in units of 100 steps/s²:
+`|P1 - P0| / V + V / (A * 100)` seconds. The SDK examples use a formula with
+`V * 50`, which assumes the wrong speed unit.
 
 ## `scscl` (SCS family)
 

@@ -46,6 +46,10 @@ from src.so101_bus import (
 TORQUE_SET_MIDDLE = 128
 POSITION_MIDDLE = 2048
 ZERO_TOLERANCE = 8  # steps; how close to 2048 the servo must read after zeroing
+# Speed (steps/s) and acceleration (100 steps/s^2 units) used only to hold a
+# joint in place; the same gentle values as the app's moves.
+HOLD_SPEED = 600
+HOLD_ACC = 30
 
 
 def read_positions(packet_handler, ids):
@@ -90,11 +94,15 @@ def set_zero_positions(packet_handler, ids, log=print):
             log(f"{name} (ID {servo_id}): set-zero command failed. {describe(packet_handler, result, error)}")
             continue
         time.sleep(0.05)
+        after, _, result, _ = packet_handler.ReadPosSpeed(servo_id)
+        after = int(after) if result == COMM_SUCCESS else None
+        if after is not None:
+            # Hold the joint where it is in the new coordinates before the torque
+            # comes back, so a stale goal position cannot make it jump.
+            packet_handler.WritePosEx(servo_id, after, HOLD_SPEED, HOLD_ACC)
         if torque_was_on:
             packet_handler.write1ByteTxRx(servo_id, REG_TORQUE_ENABLE, 1)
 
-        after, _, result, _ = packet_handler.ReadPosSpeed(servo_id)
-        after = int(after) if result == COMM_SUCCESS else None
         ok = after is not None and abs(after - POSITION_MIDDLE) <= ZERO_TOLERANCE
         results[servo_id] = {"before": int(before), "after": after, "ok": ok}
         state = "ok" if ok else "NOT applied"

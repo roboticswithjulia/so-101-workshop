@@ -14,7 +14,7 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 
 ## Included features
 
-- one-button desktop app (Python and Tkinter, Catalan interface) that stores the current pose of the arm as its zero pose
+- desktop app (Python and Tkinter, Catalan interface) with one slider per joint to move the arm and a button that stores the current pose as the zero pose
 - command line tools to find the servos, check their configuration and watch their positions
 - a real robot adapter and a simulated robot with the same interface, ready for a future workshop UI
 - all servo communication through the official Feetech SDK
@@ -23,7 +23,7 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 ## Project structure
 
 - `app/` – desktop application
-  - `app/app.py` – one-button app: store the current pose as the zero pose (same as `servo_positions.py --set-zero`)
+  - `app/app.py` – joint sliders and the zero-pose button (same operation as `servo_positions.py --set-zero`)
 - `src/` – source code: robot logic and servo tools
   - `src/robot_controller.py` – safe controller logic (used by the tests and by a future workshop UI)
   - `src/mock_robot.py` – simulated robot with the same interface as the real one
@@ -73,7 +73,22 @@ The `--system-site-packages` flag keeps the system Tkinter visible inside the vi
 
 ## Run the app
 
-A minimal window (Catalan interface) with a single button for instructors. Put the arm in its neutral pose with the gripper open, press "Fixar la posició actual com a zero", confirm with "Sí", and every servo stores its current position as its zero (2048). The result per servo is shown in the window.
+A Catalan window for instructors. It connects to the arm when it opens (or with the "Connectar" button), holds every servo where it is and enables its torque.
+
+**Joint sliders.** One slider per joint moves that servo as an offset in degrees from the zero pose:
+
+| ID | Joint (Catalan) | Limits [min, max] | Direction |
+|----|-----------------|-------------------|-----------|
+| 1 | Base | -75° to +75° | normal |
+| 2 | Espatlla | -75° to +60° | normal |
+| 3 | Colze | -25° to +75° | inverted (value × -1) |
+| 4 | Canell | -70° to +18° | normal |
+| 5 | Gir del canell | -75° to +75° | normal |
+| 6 | Pinça | -25° to +45° | normal |
+
+Each slider runs between the limits of its joint. To the right of each slider there are three boxes: the target position in degrees (type a value such as `45` or `-12.5` and press Enter and the joint moves there; a value outside the limits is refused), and the minimum and maximum limits (type a new value and press Enter: the slider is rescaled and later moves are clamped to the new limits). The defaults are the table above. The last column of the `JOINTS` table in `app/app.py` sets the direction of each joint (+1 normal, -1 inverted); Colze is inverted. "Tornar tot a zero" moves every joint back to the zero pose. "Desar posicions" asks for a file and writes the current position of every servo to it as JSON: raw position, degrees from the zero pose, whether the joint is inverted, and its limits, plus the port and a timestamp. A move is sent when the slider is released (one smooth motion at about 9 rpm). The ranges are the `JOINTS` table and the speed the `SAFE_SPEED` / `SAFE_ACC` constants at the top of `app/app.py`; if a joint judders, raise the speed, and if it moves too fast, lower it.
+
+**Zero pose.** Put the arm in its neutral pose with the gripper open, press "Fixar la posició actual com a zero", confirm with "Sí", and every servo stores its current position as its zero (2048). The result per servo is shown in the window and the sliders reset to 0°.
 
 From the project folder:
 
