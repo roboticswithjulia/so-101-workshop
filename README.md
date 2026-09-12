@@ -26,6 +26,10 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 ## Project structure
 
 - `app.py` – main desktop UI
+- `app_v2.py` – one-button app: store the current pose as the zero pose (same as `servo_positions.py --set-zero`)
+- `robot_controller.py` – safe controller logic
+- `mock_robot.py` – simulation backend for demos and tests
+- `real_robot.py` – adapter for the real arm on top of the Feetech SDK
 - `so101_bus.py` – shared helpers on top of the Feetech SDK (open the bus, parse IDs, register map)
 - `servo_scan.py` – find the serial port and the servo IDs (ping)
 - `servo_config.py` – read and check the configuration of each servo
@@ -75,6 +79,17 @@ From the project folder:
 
 ```bash
 python3 app.py
+```
+
+### App v2: zero pose only
+
+A minimal window (Catalan interface) with a single button for instructors. Put the arm in its neutral pose with the gripper open, press "Fixar la posició actual com a zero", confirm, and every servo stores its current position as its zero (2048). The result per servo is shown in the window.
+
+If the app reports "permís denegat" on the serial port, your user must be in the `dialout` group. Run `sudo usermod -aG dialout $USER` once, then **log out and log back in** (or reboot). The new group only applies to sessions started after the change, so a terminal or VS Code window that was already open keeps failing. To run once without logging out: `sg dialout -c "python3 app_v2.py"`.
+
+```bash
+python3 app_v2.py                          # /dev/ttyACM0, IDs 1..6
+python3 app_v2.py --port /dev/ttyUSB0 --ids 1,2,3
 ```
 
 ## Run the tests
@@ -159,7 +174,10 @@ Shows the raw position (0..4095), degrees, speed and moving state of each joint.
 ```bash
 python3 servo_positions.py                   # one reading
 python3 servo_positions.py --loop            # refresh every 0.5 s until Ctrl+C
+python3 servo_positions.py --set-zero        # take the current pose as the zero pose
 ```
+
+`--set-zero` first prints the current positions and asks for confirmation. It then tells each servo to treat its current position as the middle of its range, so every joint reads 2048 in that pose. The servo stores the offset in its EEPROM, so it survives power cycles and replaces any previous zero. Put the arm in its neutral pose with the gripper open before running it, and use it only from the instructor account.
 
 ### 4. Servo wiring guide
 
@@ -263,7 +281,7 @@ The app includes a hidden instructor panel for advanced actions such as:
 
 - reset emergency stop
 - diagnostics
-- calibration reminders
+- **Set current pose as zero**: a check box that stores the current position of every motor as its zero position (2048). Ticking it opens a confirmation dialog; on "yes" the app writes the zero to the servos (the same operation as `servo_positions.py --set-zero`) and reports the result in the status area. The box clears itself afterwards. In demo mode the operation is simulated.
 
 This keeps the main beginner interface simple and safe.
 
