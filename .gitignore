@@ -1,0 +1,11 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Local Feetech SDK checkout (installed from requirements.txt instead)
+FTServo_Python/

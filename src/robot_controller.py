@@ -44,6 +44,21 @@ class RobotController:
         except Exception as exc:  # pragma: no cover - protective fallback
             return {"success": False, "message": f"Close gripper failed: {exc}"}
 
+    def set_zero(self):
+        """Store the robot's current pose as its zero pose (instructor action)."""
+        if self.robot.emergency_stop_active:
+            return {"success": False, "message": "Emergency stop is active. Reset the robot before calibrating."}
+        try:
+            results = self.robot.set_zero()
+        except Exception as exc:  # pragma: no cover - protective fallback
+            return {"success": False, "message": f"Set zero failed: {exc}"}
+        if not results:
+            return {"success": False, "message": "No servo answered. Nothing changed."}
+        failed = sorted(servo_id for servo_id, result in results.items() if not result["ok"])
+        if failed:
+            return {"success": False, "message": f"Zero pose not applied on servos {failed}."}
+        return {"success": True, "message": f"Zero pose stored on servos {sorted(results)}."}
+
     def emergency_stop(self):
         self.robot.emergency_stop()
         return {"success": True, "message": "Emergency stop activated."}

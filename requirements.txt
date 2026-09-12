@@ -1,1 +1,4 @@
 pyserial>=3.5
+# Official Feetech servo SDK. Installs the `scservo_sdk` Python package used by
+# servo_positions.py (PortHandler, sms_sts, ...).
+ftservo-python-sdk==2.0.0

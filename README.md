@@ -1,6 +1,6 @@
 # LEERobot SO-101 Workshop App
 
-A beginner-friendly desktop application for the LEERobot SO-101 workshop. It is designed for non-expert users and runs well on a Raspberry Pi 3 B without requiring a browser-based UI.
+Tools and a small desktop application for the LEERobot SO-101 workshop. Everything runs on a Raspberry Pi 3 B without a browser and talks to the Feetech STS3215 servos through the official Feetech SDK.
 
 ## Project goal
 
@@ -14,26 +14,29 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 
 ## Included features
 
-- desktop app built with Python and Tkinter
-- beginner-safe controls with large buttons
-- emergency stop and reset flow
-- demo mode for training and testing
-- real robot mode adapter for future hardware integration
-- bilingual interface: Catalan and English
-- instructor-only advanced controls panel
-- task screens for pick-and-place and robotic Jenga
+- one-button desktop app (Python and Tkinter, Catalan interface) that stores the current pose of the arm as its zero pose
+- command line tools to find the servos, check their configuration and watch their positions
+- a real robot adapter and a simulated robot with the same interface, ready for a future workshop UI
+- all servo communication through the official Feetech SDK
+- unit tests that run without hardware
 
 ## Project structure
 
-- `app.py` – main desktop UI
-- `robot_controller.py` – safe controller logic
-- `mock_robot.py` – simulation backend for demos and tests
-- `real_robot.py` – adapter for a real robot connection
-- `servo_config.py` – example servo configuration helper
-- `servo_scan.py` – scan serial ports and check bus availability
-- `servo_calibration.py` – step-by-step calibration guide
-- `servo_wiring.py` – wiring and safety diagram
-- `tests/test_robot_controller.py` – validation tests
+- `app/` – desktop application
+  - `app/app.py` – one-button app: store the current pose as the zero pose (same as `servo_positions.py --set-zero`)
+- `src/` – source code: robot logic and servo tools
+  - `src/robot_controller.py` – safe controller logic (used by the tests and by a future workshop UI)
+  - `src/mock_robot.py` – simulated robot with the same interface as the real one
+  - `src/real_robot.py` – adapter for the real arm on top of the Feetech SDK
+  - `src/so101_bus.py` – shared helpers on top of the Feetech SDK (open the bus, parse IDs, register map)
+  - `src/servo_scan.py` – find the serial port and the servo IDs (ping)
+  - `src/servo_config.py` – read and check the configuration of each servo
+  - `src/servo_positions.py` – show the current position of each joint
+  - `src/servo_wiring.py` – wiring and safety diagram
+- `tests/` – validation tests
+- `docs/` – documentation: `FTSERVO_SDK.md` (Feetech SDK reference), `context.md` (workshop context) and the workshop proposal PDF
+
+All servo communication goes through the official Feetech SDK (`ftservo-python-sdk`, imported as `scservo_sdk`). Run every script from the project folder; the app and the tools can be run directly (`python3 app/app.py`) or as modules (`python3 -m app.app`, `python3 -m src.servo_scan`).
 
 ## Requirements
 
@@ -42,7 +45,23 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 - Raspberry Pi OS (recommended)
 - Python 3
 - Tkinter
-- optionally: `pyserial` for serial bus work
+- the Python packages in `requirements.txt`: `pyserial` and the official Feetech SDK `ftservo-python-sdk` (imported as `scservo_sdk`)
+
+Install them from the project folder:
+
+```bash
+pip install -r requirements.txt
+```
+
+On Raspberry Pi OS Bookworm, pip refuses to install into the system Python. Use a virtual environment:
+
+```bash
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The `--system-site-packages` flag keeps the system Tkinter visible inside the virtual environment.
 
 ### Hardware
 
@@ -54,16 +73,21 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 
 ## Run the app
 
+A minimal window (Catalan interface) with a single button for instructors. Put the arm in its neutral pose with the gripper open, press "Fixar la posició actual com a zero", confirm with "Sí", and every servo stores its current position as its zero (2048). The result per servo is shown in the window.
+
 From the project folder:
 
 ```bash
-python3 app.py
+python3 app/app.py                             # /dev/ttyACM0, IDs 1..6
+python3 app/app.py --port /dev/ttyUSB0 --ids 1,2,3
 ```
+
+If the app reports "permís denegat" on the serial port, your user must be in the `dialout` group. Run `sudo usermod -aG dialout $USER` once, then **log out and log back in** (or reboot). The new group only applies to sessions started after the change, so a terminal or VS Code window that was already open keeps failing. To run once without logging out: `sg dialout -c "python3 app/app.py"`.
 
 ## Run the tests
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -t . -v
 ```
 
 ## STS3215 servo configuration notes
@@ -107,41 +131,52 @@ The project includes several educational helper scripts for the actual SO-101 ha
 Use the bus scanner to inspect available serial ports and confirm the controller is seeing the communication bus.
 
 ```bash
-python3 servo_scan.py
+python3 src/servo_scan.py
 ```
 
-This helper uses a minimal Feetech ping packet and checks multiple serial ports for a response from STS3215 servos. It is intended as a practical workshop tool to confirm that the bus is live before calibration.
+It pings every ID with the SDK's `ping` call on each USB serial port, at 1,000,000 bps first and then at 500,000 and 115,200 bps, and prints the model number of every servo that answers.
+
+```bash
+python3 src/servo_scan.py --ids 1-6              # quick check of the six arm servos (about 1 s)
+python3 src/servo_scan.py --port /dev/ttyACM0    # scan one port only
+python3 src/servo_scan.py --baud 115200          # servos configured at another speed
+```
 
 This is useful for:
 
 - confirming the correct serial device is connected
 - checking the wiring before powering the arm
-- identifying the communication port before calibration
+- identifying the communication port and the servo IDs
 
-### 2. Servo calibration
+### 2. Servo configuration check
 
-Run the calibration guide to follow the safe zeroing procedure before any movement test.
+Reads the configuration registers of each servo and compares them with the workshop setup. Nothing is written.
 
 ```bash
-python3 servo_calibration.py
+python3 src/servo_config.py                      # /dev/ttyACM0, IDs 1..6
+python3 src/servo_config.py --port /dev/ttyUSB0 --ids 1,2,3
 ```
 
-This script explains:
+The table shows, per servo: model, baud rate, mode, angle limits, offset, torque state, position, voltage and temperature. Warnings are printed for a baud rate other than 1,000,000 bps, a mode other than position, torque off, voltage outside 6.0 to 8.4 V, high temperature, and IDs that do not answer.
 
-- how to wire the servos safely
-- how to set unique IDs
-- how to move to the neutral position
-- how to save zero offsets
-- how to test each servo slowly
+### 3. Servo positions
 
-It also attempts a bus scan before calibration so the workflow is aligned with the hardware check.
+Shows the raw position (0..4095), degrees, speed and moving state of each joint.
 
-### 3. Servo wiring guide
+```bash
+python3 src/servo_positions.py                   # one reading
+python3 src/servo_positions.py --loop            # refresh every 0.5 s until Ctrl+C
+python3 src/servo_positions.py --set-zero        # take the current pose as the zero pose
+```
+
+`--set-zero` first prints the current positions and asks for confirmation. It then tells each servo to treat its current position as the middle of its range, so every joint reads 2048 in that pose. The servo stores the offset in its EEPROM, so it survives power cycles and replaces any previous zero. Put the arm in its neutral pose with the gripper open before running it, and use it only from the instructor account.
+
+### 4. Servo wiring guide
 
 Print the wiring reference for the arm and the serial bus layout.
 
 ```bash
-python3 servo_wiring.py
+python3 src/servo_wiring.py
 ```
 
 This tool shows:
@@ -151,41 +186,17 @@ This tool shows:
 - recommended joint mapping
 - safety rules for beginner users
 
-## Real serial protocol notes
+## Serial protocol notes
 
-The scripts use the Feetech STS/SCS serial protocol (Dynamixel-style) used by STS3215 smart servos:
+The scripts do not build packets themselves. They use the official Feetech SDK (`scservo_sdk`): `PortHandler` opens the serial port and `sms_sts` implements the STS/SMS protocol (ping, read and write registers, sync read/write). `so101_bus.py` wraps the two in `open_bus()` and holds the STS3215 register addresses the tools read. See `docs/FTSERVO_SDK.md` for the SDK reference.
 
-- packet header: `0xFF 0xFF` (note: `0x55 0x55` is the Hiwonder/LewanSoul protocol and STS3215 servos ignore it)
-- servo ID field
-- length field (number of parameters + 2)
-- instruction field (`0x01` ping, `0x02` read, `0x03` write)
-- parameter bytes
-- checksum byte: `~(id + length + instruction + params) & 0xFF`
+For reference, the wire format is Dynamixel-style: header `0xFF 0xFF`, servo ID, length, instruction, parameters, checksum. A ping to ID 1 is `FF FF 01 02 01 FB` and the servo answers `FF FF 01 02 00 FC`. The `0x55 0x55` header used by Hiwonder/LewanSoul servos is a different protocol and STS3215 servos ignore it.
 
-A ping to ID 1 is `FF FF 01 02 01 FB` and the servo answers `FF FF 01 02 00 FC`. Many USB bus adapters are half-duplex and echo the transmitted bytes back, so the scanner strips its own packet before looking for the reply.
-
-Useful scanner options:
-
-```bash
-python3 servo_scan.py --ids 1-6              # quick check of the six arm servos
-python3 servo_scan.py --port /dev/ttyACM0    # scan one port only
-python3 servo_scan.py --baud 115200          # servos configured at another speed
-```
-
-If the port check fails with "Permission denied", add your user to the `dialout` group and log in again:
+If a tool fails with "Permission denied" on the serial port, add your user to the `dialout` group and log in again:
 
 ```bash
 sudo usermod -aG dialout $USER
 ```
-
-The live adapter in `real_robot.py` now performs:
-
-- serial port discovery
-- connection attempts to likely Pi serial ports
-- a ping scan across the servo IDs
-- safe servo position commands for a first-stage workshop integration
-
-> This implementation is intentionally conservative for a beginner workshop environment. It is designed to work as a practical base layer for the SO-101, but the exact servo model, adapter board, and firmware may still require a small adjustment depending on the final hardware setup.
 
 ## Raspberry Pi live setup
 
@@ -197,11 +208,11 @@ To use the real robot path on the Pi:
 4. Run:
 
 ```bash
-python3 servo_scan.py
+python3 src/servo_scan.py
 ```
 
-5. If a servo responds, run the app in real mode from the desktop interface.
-6. Use the emergency stop before each motion test.
+5. If the six servos respond, put the arm in its neutral pose and run `python3 app/app.py` to store the zero pose.
+6. Check with `python3 src/servo_positions.py` that every joint reads 2048 in that pose.
 
 This is the recommended live workflow before any broader arm movement.
 
@@ -218,12 +229,12 @@ This is the recommended live workflow before any broader arm movement.
 
 1. Power the arm from a stable 7.4V source
 2. Verify the ground is common for all servos and controller
-3. Run `servo_scan.py` to identify the serial port
+3. Run `servo_scan.py` to identify the serial port and the servo IDs
 4. Check each servo one by one on the bus
 5. Assign the correct IDs and configure the bus speed
-6. Run `servo_calibration.py` and set the zero positions
-7. Confirm the home pose is safe
-8. Only then test motion in the workshop UI
+6. Run `servo_config.py` and fix any warning it prints
+7. Put the arm in its neutral pose and store the zero pose with `app/app.py`
+8. Run `servo_positions.py` and confirm every joint reads 2048 in the neutral pose
 
 ## Troubleshooting
 
@@ -256,35 +267,15 @@ This is the recommended live workflow before any broader arm movement.
 - always stop the robot if a joint stalls or overheats
 - calibration should normally be done by instructors only
 
-## Instructor mode
+## Robot adapters for a future workshop UI
 
-The app includes a hidden instructor panel for advanced actions such as:
+`src/real_robot.py` (real arm, on the Feetech SDK) and `src/mock_robot.py` (simulation) share one interface: `move_to`, `open_gripper`, `close_gripper`, `home`, `emergency_stop`, `reset_emergency_stop`, `read_positions` and `set_zero`. `src/robot_controller.py` wraps them with range checks and emergency-stop handling. Motion commands are offsets from the zero pose stored by the app, so a workshop UI can be built on top without touching the servo code.
 
-- reset emergency stop
-- diagnostics
-- calibration reminders
+### App reports an error
 
-This keeps the main beginner interface simple and safe.
-
-## Future hardware integration
-
-The `RealRobotAdapter` class is included as a clean abstraction layer. This makes it easier to connect the desktop app to the real SO-101 once the serial setup is ready.
-
-## Troubleshooting
-
-### App opens but robot does not move
-
-- check whether demo mode is active
-- verify the real robot adapter is connected
-- confirm the servo bus is powered and grounded
-- validate the serial connection and servo IDs
-
-### Servos jitter or reset
-
-- check the power supply rating
-- verify the shared ground
-- reduce the number of simultaneous motions
-- confirm the bus speed matches the servo protocol
+- "permís denegat": add your user to `dialout` and log out and back in (see "Run the app")
+- "Cap motor ha respost": check the 7.4V supply, the cable chain and the servo IDs with `src/servo_scan.py`
+- "NO aplicat" on a servo: the servo ignored the zero command; check its firmware or use the Feetech tool
 
 ## License
 
