@@ -1,5 +1,24 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
+#!/usr/bin/env python3
+"""SO-101 app (Catalan UI): a single button that stores the current pose as the zero pose.
+
+It does exactly what `servo_positions.py --set-zero` does, behind one big button:
+open the bus servo adapter, read the position of each servo, tell every servo to
+treat its current position as the middle of its range (2048) and read back to
+confirm. The offset is stored in the servo EEPROM, so it survives power cycles.
+
+    python3 app/app.py                         # /dev/ttyACM0, IDs 1..6
+    python3 app/app.py --port /dev/ttyUSB0 --ids 1,2,3
+
+Install the dependencies first: pip install -r requirements.txt
+"""
+
+import argparse
+
+try:
+    import tkinter as tk
+    from tkinter import ttk
+except ImportError:  # pragma: no cover - headless machines
+    tk = None
 
 import sys
 from pathlib import Path
@@ -7,361 +26,222 @@ from pathlib import Path
 # Allow running this file directly (python3 <folder>/<file>.py) as well as with python3 -m
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.mock_robot import MockRobot
-from src.real_robot import RealRobotAdapter
-from src.robot_controller import RobotController
+from src.servo_positions import read_positions, set_zero_positions
+from src.so101_bus import ARM_IDS, DEFAULT_BAUDRATE, DEFAULT_PORT, open_bus, parse_ids
+
+NOMS_ARTICULACIONS = {
+    1: "Base",
+    2: "Espatlla",
+    3: "Colze",
+    4: "Canell",
+    5: "Gir del canell",
+    6: "Pinça",
+}
+
+TEXTS = {
+    "window_title": "Posició zero del SO-101",
+    "title": "Posició zero del SO-101",
+    "intro": (
+        "Col·loca el braç en la posició neutra amb la pinça oberta i prem el botó. "
+        "Cada motor ({first}..{last}) de {port} desarà la seva posició actual com a zero (2048)."
+    ),
+    "button": "Fixar la posició actual com a zero",
+    "ready": "A punt.",
+    "confirm_title": "Fixar la posició actual com a zero",
+    "confirm_text": (
+        "La posició actual de cada motor es desarà com a posició zero (2048).\n\n"
+        "Es desa a la memòria dels motors i substitueix el zero anterior.\n\n"
+        "Vols continuar?"
+    ),
+    "yes": "Sí",
+    "no": "No",
+    "cancelled": "Cancel·lat. No s'ha canviat res.",
+    "connecting": "Connectant amb {port} ...",
+    "ok_prefix": "Correcte: ",
+    "error_prefix": "Error: ",
+    "no_answer": "Cap motor ha respost. Comprova l'alimentació de 7,4 V, la cadena de cables i els IDs dels motors.",
+    "permission": (
+        "No es pot obrir {port}: permís denegat. Afegeix el teu usuari al grup dialout "
+        "(sudo usermod -aG dialout $USER) i torna a iniciar la sessió."
+    ),
+    "port_error": "No s'ha pogut obrir el port {port}: {detail}",
+    "current": "{name} (ID {servo_id}): posició actual {position}",
+    "result_ok": "{name} (ID {servo_id}): {before} -> {after} (correcte)",
+    "result_fail": "{name} (ID {servo_id}): {before} -> {after} (NO aplicat)",
+    "skipped": "{name} (ID {servo_id}): sense resposta, s'ha omès",
+    "stored": "Posició zero desada als motors {ids}. Ara cada articulació llegeix 2048 en aquesta posició.",
+    "not_applied": "No s'ha pogut aplicar el zero als motors {ids}. Comprova el firmware dels motors o utilitza l'eina de Feetech.",
+    "no_tk": "Tkinter no està instal·lat. A Raspberry Pi OS / Debian executa: sudo apt install python3-tk",
+    "cli_description": "Aplicació d'un sol botó: desa la posició actual com a posició zero.",
+    "cli_port": "dispositiu sèrie (per defecte: %(default)s)",
+    "cli_baud": "velocitat en bauds (per defecte: %(default)s)",
+    "cli_ids": "IDs dels motors, p. ex. '1-6' o '1,2,3' (per defecte: %(default)s)",
+}
 
 
-class RobotApp:
-    def __init__(self, root):
+def nom_articulacio(servo_id):
+    return NOMS_ARTICULACIONS.get(servo_id, f"Motor {servo_id}")
+
+
+def run_set_zero(port, baudrate, ids, log=print):
+    """Open the bus, store the current pose as zero, close the bus.
+
+    Returns (results, error): `results` is the {id: {"before", "after", "ok"}}
+    dict from set_zero_positions, `error` a Catalan message when nothing could be done.
+    """
+    try:
+        port_handler, packet_handler = open_bus(port, baudrate)
+    except RuntimeError as exc:
+        if "ermission" in str(exc) or "denegat" in str(exc):
+            return {}, TEXTS["permission"].format(port=port)
+        return {}, TEXTS["port_error"].format(port=port, detail=exc)
+    try:
+        readings = read_positions(packet_handler, ids)
+        if not readings:
+            return {}, TEXTS["no_answer"]
+        for servo_id in ids:
+            if servo_id in readings:
+                log(TEXTS["current"].format(name=nom_articulacio(servo_id), servo_id=servo_id, position=readings[servo_id]["position"]))
+        log("")
+        results = set_zero_positions(packet_handler, ids, log=lambda *_: None)
+    finally:
+        port_handler.closePort()
+
+    for servo_id in ids:
+        name = nom_articulacio(servo_id)
+        result = results.get(servo_id)
+        if result is None:
+            log(TEXTS["skipped"].format(name=name, servo_id=servo_id))
+            continue
+        after = result["after"] if result["after"] is not None else "--"
+        key = "result_ok" if result["ok"] else "result_fail"
+        log(TEXTS[key].format(name=name, servo_id=servo_id, before=result["before"], after=after))
+    return results, None
+
+
+def summarize(results, error):
+    if error:
+        return False, error
+    failed = sorted(servo_id for servo_id, result in results.items() if not result["ok"])
+    if failed:
+        return False, TEXTS["not_applied"].format(ids=failed)
+    return True, TEXTS["stored"].format(ids=sorted(results))
+
+
+def ask_si_no(parent, title, text):
+    """Modal confirmation dialog with Catalan buttons (Tk's askyesno only offers Yes/No)."""
+    dialog = tk.Toplevel(parent)
+    dialog.title(title)
+    dialog.transient(parent)
+    dialog.resizable(False, False)
+    answer = {"value": False}
+
+    def choose(value):
+        answer["value"] = value
+        dialog.destroy()
+
+    ttk.Label(dialog, text=text, wraplength=400, justify="left", padding=(20, 20, 20, 12)).pack(fill="x")
+    buttons = ttk.Frame(dialog, padding=(20, 0, 20, 20))
+    buttons.pack(fill="x")
+    yes_button = ttk.Button(buttons, text=TEXTS["yes"], command=lambda: choose(True), width=10)
+    yes_button.pack(side="right", padx=(8, 0))
+    ttk.Button(buttons, text=TEXTS["no"], command=lambda: choose(False), width=10).pack(side="right")
+
+    dialog.protocol("WM_DELETE_WINDOW", lambda: choose(False))
+    dialog.bind("<Escape>", lambda event: choose(False))
+    dialog.bind("<Return>", lambda event: choose(True))
+
+    # Centre the dialog over the parent window.
+    dialog.update_idletasks()
+    x = parent.winfo_rootx() + (parent.winfo_width() - dialog.winfo_width()) // 2
+    y = parent.winfo_rooty() + (parent.winfo_height() - dialog.winfo_height()) // 2
+    dialog.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+
+    dialog.grab_set()
+    yes_button.focus_set()
+    parent.wait_window(dialog)
+    return answer["value"]
+
+
+class ZeroApp:
+    def __init__(self, root, port, baudrate, ids):
         self.root = root
-        self.root.title("LEERobot SO-101")
-        self.root.geometry("900x620")
-        self.root.minsize(760, 520)
-        self.root.configure(bg="#edf4ff")
+        self.port = port
+        self.baudrate = baudrate
+        self.ids = ids
 
-        self.language = "ca"
-        self.mode = "demo"
-        self.robot = MockRobot()
-        self.controller = RobotController(self.robot)
-        self.real_robot = None
+        root.title(TEXTS["window_title"])
+        root.geometry("560x420")
+        root.minsize(420, 320)
 
-        self.status_var = tk.StringVar(value="Estat: Llest per iniciar")
-        self.log_var = tk.StringVar(value="Encara no s'ha executat cap acció.")
-        self.mode_var = tk.StringVar(value="Mode: Demo")
-        self.lang_var = tk.StringVar(value="Català")
-        self.zero_var = tk.BooleanVar(value=False)
-
-        self._texts = {
-            "ca": {
-                "title": "LEERobot SO-101",
-                "subtitle": "Assistent del taller",
-                "welcome": "Benvingut/a",
-                "demo_mode": "Iniciar taller",
-                "real_mode": "Mode instructor",
-                "lang": "Idioma",
-                "actions": "Accions del robot",
-                "home": "Anar a l'inici",
-                "open": "Obrir pinça",
-                "close": "Tancar pinça",
-                "safe": "Moure amb seguretat",
-                "stop": "Aturada d'emergència",
-                "reset": "Restablir",
-                "status": "Estat",
-                "safety": "Seguretat",
-                "safety_text": "1. Comprova l'espai. 2. Mantingues les mans allunyades. 3. Confirma que el robot està preparat abans de cada moviment. 4. Prem Aturada d'emergència si cal.",
-                "task": "Tasques guiades",
-                "task_intro": "Escull una tasca de manutenció",
-                "pick_place": "Agafar i deixar",
-                "jenga": "Jenga robòtic",
-                "advanced": "Controls d'instructor",
-                "mode_label": "Mode actual",
-                "start_title": "Comencem",
-                "start_subtitle": "Selecciona el mode de la sessió",
-                "start_workshop": "Iniciar taller",
-                "start_instructor": "Mode instructor",
-                "start_demo": "Mode demostració",
-                "exit": "Sortir",
-                "instructor_title": "Accés d'instructor",
-                "instructor_text": "Només per al personal del taller. Utilitza la calibració i els diagnòstics amb seguretat.",
-                "reset_stop": "Restablir aturada d'emergència",
-                "diagnostics": "Executar diagnòstics",
-                "set_zero": "Fixar la posició actual com a zero",
-                "set_zero_confirm": "La posició actual de cada motor es guardarà com a posició zero (2048).\n\nEs desa a la memòria dels motors i substitueix el zero anterior.\n\nVols continuar?",
-                "close": "Tancar",
-            },
-            "en": {
-                "title": "LEERobot SO-101",
-                "subtitle": "Workshop assistant",
-                "welcome": "Welcome",
-                "demo_mode": "Start workshop",
-                "real_mode": "Instructor mode",
-                "lang": "Language",
-                "actions": "Robot actions",
-                "home": "Go home",
-                "open": "Open gripper",
-                "close": "Close gripper",
-                "safe": "Move safely",
-                "stop": "Emergency stop",
-                "reset": "Reset",
-                "status": "Status",
-                "safety": "Safety",
-                "safety_text": "1. Check the area. 2. Keep hands clear. 3. Confirm the robot is ready before each move. 4. Press Emergency Stop if needed.",
-                "task": "Guided tasks",
-                "task_intro": "Choose a handling task",
-                "pick_place": "Pick and place",
-                "jenga": "Robotic Jenga",
-                "advanced": "Instructor controls",
-                "mode_label": "Current mode",
-                "start_title": "Let’s begin",
-                "start_subtitle": "Choose the session mode",
-                "start_workshop": "Start workshop",
-                "start_instructor": "Instructor mode",
-                "start_demo": "Demo mode",
-                "exit": "Exit",
-                "instructor_title": "Instructor access",
-                "instructor_text": "Only for workshop staff. Use calibration and diagnostics safely.",
-                "reset_stop": "Reset emergency stop",
-                "diagnostics": "Run diagnostics",
-                "set_zero": "Set current pose as zero",
-                "set_zero_confirm": "The current position of every motor will be stored as its zero position (2048).\n\nThis is written to the motor memory and replaces the previous zero.\n\nContinue?",
-                "close": "Close",
-            },
-        }
-
-        self._build_startup_ui()
-
-    def _clear_root(self):
-        for widget in self.root.winfo_children():
-            widget.destroy()
-
-    def _build_startup_ui(self):
-        self._clear_root()
-        self.root.geometry("520x350")
-
-        frame = ttk.Frame(self.root, padding=26)
+        frame = ttk.Frame(root, padding=20)
         frame.pack(fill="both", expand=True)
 
-        ttk.Label(frame, text=self._texts[self.language]["start_title"], font=("Arial", 24, "bold")).pack(anchor="w", pady=(0, 8))
-        ttk.Label(frame, text=self._texts[self.language]["start_subtitle"], font=("Arial", 11)).pack(anchor="w", pady=(0, 18))
-
-        mode_frame = ttk.Frame(frame)
-        mode_frame.pack(fill="x", pady=(0, 16))
-
-        ttk.Button(mode_frame, text=self._texts[self.language]["start_workshop"], command=lambda: self._launch("demo"), width=24).pack(fill="x", pady=6)
-        ttk.Button(mode_frame, text=self._texts[self.language]["start_instructor"], command=lambda: self._launch("real"), width=24).pack(fill="x", pady=6)
-        ttk.Button(mode_frame, text=self._texts[self.language]["start_demo"], command=lambda: self._launch("demo"), width=24).pack(fill="x", pady=6)
-
-        bottom = ttk.Frame(frame)
-        bottom.pack(fill="x", pady=(20, 0))
-        ttk.Button(bottom, text=self._texts[self.language]["lang"], command=self._toggle_language, width=12).pack(side="left")
-        ttk.Button(bottom, text=self._texts[self.language]["exit"], command=self.root.destroy, width=12).pack(side="right")
-
-    def _toggle_language(self):
-        self.language = "en" if self.language == "ca" else "ca"
-        self.lang_var.set("English" if self.language == "en" else "Català")
-        self._build_startup_ui()
-
-    def _launch(self, mode):
-        self.mode = mode
-        self._set_mode(mode)
-        self._build_ui()
-
-    def _build_ui(self):
-        self._clear_root()
-        self.root.geometry("900x620")
-        self.root.minsize(760, 520)
-
-        main = ttk.Frame(self.root, padding=16)
-        main.pack(fill="both", expand=True)
-
-        top_bar = ttk.Frame(main)
-        top_bar.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 12))
-        top_bar.grid_columnconfigure(0, weight=1)
-        top_bar.grid_columnconfigure(1, weight=1)
-        top_bar.grid_columnconfigure(2, weight=1)
-
-        title = ttk.Label(top_bar, text=self._texts[self.language]["title"], font=("Arial", 22, "bold"))
-        title.grid(row=0, column=0, sticky="w")
-
-        mode_label = ttk.Label(top_bar, textvariable=self.mode_var, font=("Arial", 10, "bold"))
-        mode_label.grid(row=0, column=1, sticky="center")
-
-        lang_combo = ttk.Combobox(top_bar, textvariable=self.lang_var, state="readonly", width=12)
-        lang_combo["values"] = ("Català", "English")
-        lang_combo.grid(row=0, column=2, sticky="e")
-        lang_combo.bind("<<ComboboxSelected>>", self._on_language_change)
-
-        ttk.Label(main, text=self._texts[self.language]["subtitle"], font=("Arial", 11)).grid(
-            row=1, column=0, columnspan=3, sticky="w", pady=(0, 12)
-        )
-
-        selector_frame = ttk.LabelFrame(main, text=self._texts[self.language]["mode_label"], padding=10)
-        selector_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 12))
-        ttk.Button(selector_frame, text=self._texts[self.language]["demo_mode"], command=lambda: self._set_mode("demo")).pack(side="left", padx=(0, 8))
-        ttk.Button(selector_frame, text=self._texts[self.language]["real_mode"], command=lambda: self._set_mode("real")).pack(side="left", padx=(0, 8))
-        ttk.Button(selector_frame, text=self._texts[self.language]["advanced"], command=self._open_instructor_panel).pack(side="left")
-
-        action_frame = ttk.LabelFrame(main, text=self._texts[self.language]["actions"], padding=12)
-        action_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=(0, 12), pady=(0, 12))
-
-        ttk.Button(action_frame, text=self._texts[self.language]["home"], command=self.go_home, width=18).grid(
-            row=0, column=0, padx=6, pady=6, sticky="ew"
-        )
-        ttk.Button(action_frame, text=self._texts[self.language]["open"], command=self.open_gripper, width=18).grid(
-            row=0, column=1, padx=6, pady=6, sticky="ew"
-        )
-        ttk.Button(action_frame, text=self._texts[self.language]["close"], command=self.close_gripper, width=18).grid(
-            row=1, column=0, padx=6, pady=6, sticky="ew"
-        )
-        ttk.Button(action_frame, text=self._texts[self.language]["safe"], command=self.move_safe, width=18).grid(
-            row=1, column=1, padx=6, pady=6, sticky="ew"
-        )
-        ttk.Button(action_frame, text=self._texts[self.language]["stop"], command=self.emergency_stop, width=18).grid(
-            row=2, column=0, padx=6, pady=(8, 4), sticky="ew"
-        )
-        ttk.Button(action_frame, text=self._texts[self.language]["reset"], command=self.reset_emergency_stop, width=18).grid(
-            row=2, column=1, padx=6, pady=(8, 4), sticky="ew"
-        )
-
-        for i in range(2):
-            action_frame.grid_columnconfigure(i, weight=1)
-
-        task_frame = ttk.LabelFrame(main, text=self._texts[self.language]["task"], padding=12)
-        task_frame.grid(row=3, column=2, sticky="nsew")
-        ttk.Label(task_frame, text=self._texts[self.language]["task_intro"], wraplength=220).pack(anchor="w", pady=(0, 8))
-        ttk.Button(task_frame, text=self._texts[self.language]["pick_place"], command=self.task_pick_place, width=22).pack(fill="x", pady=4)
-        ttk.Button(task_frame, text=self._texts[self.language]["jenga"], command=self.task_jenga, width=22).pack(fill="x", pady=4)
-
-        info_frame = ttk.LabelFrame(main, text=self._texts[self.language]["status"], padding=12)
-        info_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(0, 12))
-        ttk.Label(info_frame, textvariable=self.status_var, wraplength=760).pack(anchor="w")
-        ttk.Label(info_frame, textvariable=self.log_var, wraplength=760, justify="left").pack(anchor="w", pady=(10, 0))
-
-        safety_frame = ttk.LabelFrame(main, text=self._texts[self.language]["safety"], padding=12)
-        safety_frame.grid(row=5, column=0, columnspan=3, sticky="ew")
+        ttk.Label(frame, text=TEXTS["title"], font=("Arial", 20, "bold")).pack(anchor="w")
         ttk.Label(
-            safety_frame,
-            text=self._texts[self.language]["safety_text"],
-            wraplength=760,
+            frame,
+            text=TEXTS["intro"].format(first=ids[0], last=ids[-1], port=port),
+            wraplength=500,
             justify="left",
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=(8, 16))
 
-        main.grid_columnconfigure(0, weight=1)
-        main.grid_columnconfigure(1, weight=1)
-        main.grid_columnconfigure(2, weight=1)
-        main.grid_rowconfigure(4, weight=1)
+        self.button = ttk.Button(frame, text=TEXTS["button"], command=self.on_set_zero)
+        self.button.pack(fill="x", ipady=14)
 
-    def _set_mode(self, mode):
-        self.mode = mode
-        if mode == "real":
-            self.real_robot = RealRobotAdapter()
-            try:
-                self.real_robot.connect()
-                self.robot = self.real_robot
-                self.controller = RobotController(self.robot)
-                self._update_status("Real robot connected")
-                self._log("Mode: Real robot")
-            except Exception as exc:
-                self.real_robot = None
-                self.robot = MockRobot()
-                self.controller = RobotController(self.robot)
-                self._update_status(f"Real robot unavailable: {exc}")
-                self._log("Mode: Demo fallback")
-        else:
-            self.real_robot = None
-            self.robot = MockRobot()
-            self.controller = RobotController(self.robot)
-            self._update_status("Demo mode active")
-            self._log("Mode: Demo")
+        self.status_var = tk.StringVar(value=TEXTS["ready"])
+        ttk.Label(frame, textvariable=self.status_var, wraplength=500, justify="left", font=("Arial", 11, "bold")).pack(
+            anchor="w", pady=(14, 6)
+        )
 
-        self.mode_var.set(f"Mode: {'Real robot' if mode == 'real' else 'Demo'}")
+        self.log_box = tk.Text(frame, height=9, state="disabled", wrap="word")
+        self.log_box.pack(fill="both", expand=True)
 
-    def _on_language_change(self, event):
-        value = self.lang_var.get()
-        self.language = "ca" if value == "Català" else "en"
-        self._build_ui()
+    def log(self, line):
+        self.log_box.configure(state="normal")
+        self.log_box.insert("end", line + "\n")
+        self.log_box.see("end")
+        self.log_box.configure(state="disabled")
+        self.root.update_idletasks()
 
-    def _update_status(self, message):
-        prefix = "Estat:" if self.language == "ca" else "Status:"
-        self.status_var.set(f"{prefix} {message}")
+    def clear_log(self):
+        self.log_box.configure(state="normal")
+        self.log_box.delete("1.0", "end")
+        self.log_box.configure(state="disabled")
 
-    def _log(self, message):
-        self.log_var.set(message)
-
-    def _open_instructor_panel(self):
-        texts = self._texts[self.language]
-        panel = tk.Toplevel(self.root)
-        panel.title(texts["advanced"])
-        panel.geometry("440x260")
-        panel.transient(self.root)
-
-        ttk.Label(panel, text=texts["instructor_title"], font=("Arial", 14, "bold")).pack(padx=12, pady=(12, 8), anchor="w")
-        ttk.Label(panel, text=texts["instructor_text"], wraplength=380).pack(padx=12, anchor="w")
-
-        ttk.Button(panel, text=texts["reset_stop"], command=self.reset_emergency_stop).pack(fill="x", padx=12, pady=(10, 6))
-        ttk.Button(panel, text=texts["diagnostics"], command=self._diagnostics).pack(fill="x", padx=12, pady=6)
-        self.zero_var.set(False)
-        ttk.Checkbutton(
-            panel,
-            text=texts["set_zero"],
-            variable=self.zero_var,
-            command=lambda: self._on_set_zero_box(panel),
-        ).pack(fill="x", padx=12, pady=6)
-        ttk.Button(panel, text=texts["close"], command=panel.destroy).pack(fill="x", padx=12, pady=(6, 12))
-
-    def _diagnostics(self):
-        result = self.controller.reset_emergency_stop()
-        self._update_status(result["message"])
-        self._log("Diagnostics: emergency state reset")
-
-    def _on_set_zero_box(self, parent=None):
-        """Ticking the box stores the current pose as the zero pose, after confirmation."""
-        if not self.zero_var.get():
+    def on_set_zero(self):
+        confirmed = ask_si_no(self.root, TEXTS["confirm_title"], TEXTS["confirm_text"])
+        if not confirmed:
+            self.status_var.set(TEXTS["cancelled"])
             return
-        texts = self._texts[self.language]
+
+        self.button.configure(state="disabled")
+        self.clear_log()
+        self.status_var.set(TEXTS["connecting"].format(port=self.port))
+        self.root.update_idletasks()
         try:
-            confirmed = messagebox.askyesno(texts["set_zero"], texts["set_zero_confirm"], parent=parent or self.root)
-            if confirmed:
-                self.set_zero()
-            else:
-                self._log("Zero pose: cancelled")
+            results, error = run_set_zero(self.port, self.baudrate, self.ids, log=self.log)
         finally:
-            # The box is a trigger, not a state: clear it once the action is done.
-            self.zero_var.set(False)
-
-    def set_zero(self):
-        result = self.controller.set_zero()
-        self._update_status(result["message"])
-        suffix = "" if self.mode == "real" else (" (demo)" if self.language == "en" else " (demo)")
-        self._log(("Acció: Fixar zero" if self.language == "ca" else "Action: Set zero") + suffix)
-        return result
-
-    def go_home(self):
-        result = self.controller.home()
-        self._update_status(result["message"])
-        self._log("Acció: Inici" if self.language == "ca" else "Action: Home")
-
-    def open_gripper(self):
-        result = self.controller.open_gripper()
-        self._update_status(result["message"])
-        self._log("Acció: Obrir pinça" if self.language == "ca" else "Action: Open gripper")
-
-    def close_gripper(self):
-        result = self.controller.close_gripper()
-        self._update_status(result["message"])
-        self._log("Acció: Tancar pinça" if self.language == "ca" else "Action: Close gripper")
-
-    def move_safe(self):
-        position = {"x": 10, "y": 10, "z": 5}
-        result = self.controller.safe_move(position)
-        self._update_status(result["message"])
-        self._log(f"Acció: Moure a {position}" if self.language == "ca" else f"Action: Move to {position}")
-
-    def emergency_stop(self):
-        result = self.controller.emergency_stop()
-        self._update_status(result["message"])
-        self._log("Acció: Aturada d'emergència" if self.language == "ca" else "Action: Emergency stop")
-
-    def reset_emergency_stop(self):
-        result = self.controller.reset_emergency_stop()
-        self._update_status(result["message"])
-        self._log("Acció: Restablir aturada" if self.language == "ca" else "Action: Reset emergency stop")
-
-    def task_pick_place(self):
-        self._update_status("Task: pick and place is ready")
-        self._log("Task: Pick and place")
-
-    def task_jenga(self):
-        self._update_status("Task: robotic Jenga is ready")
-        self._log("Task: Robotic Jenga")
+            self.button.configure(state="normal")
+        ok, message = summarize(results, error)
+        self.status_var.set((TEXTS["ok_prefix"] if ok else TEXTS["error_prefix"]) + message)
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=TEXTS["cli_description"])
+    parser.add_argument("--port", default=DEFAULT_PORT, help=TEXTS["cli_port"])
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE, help=TEXTS["cli_baud"])
+    parser.add_argument("--ids", default=ARM_IDS, help=TEXTS["cli_ids"])
+    args = parser.parse_args(argv)
+
+    if tk is None:
+        print(TEXTS["no_tk"])
+        return 1
+
     root = tk.Tk()
-    app = RobotApp(root)
+    ZeroApp(root, args.port, args.baud, parse_ids(args.ids))
     root.mainloop()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
