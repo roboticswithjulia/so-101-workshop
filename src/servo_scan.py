@@ -13,9 +13,14 @@ Usage examples:
 """
 
 import argparse
-import sys
 
-from so101_bus import COMM_SUCCESS, describe, discover_ports, open_bus, parse_ids
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python3 <folder>/<file>.py) as well as with python3 -m
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.so101_bus import COMM_SUCCESS, describe, discover_ports, open_bus, parse_ids
 
 # The STS3215 factory default is 1,000,000 bps. The others are common values that
 # a servo may have been reconfigured to.

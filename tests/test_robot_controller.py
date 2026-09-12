@@ -1,7 +1,7 @@
 import unittest
 
-from robot_controller import RobotController
-from mock_robot import MockRobot
+from src.robot_controller import RobotController
+from src.mock_robot import MockRobot
 
 
 class RobotControllerTests(unittest.TestCase):
@@ -38,6 +38,19 @@ class RobotControllerTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertIn("emergency", result["message"].lower())
+
+    def test_set_zero_stores_current_pose_in_demo_mode(self):
+        result = self.controller.set_zero()
+
+        self.assertTrue(result["success"])
+        self.assertTrue(all(p == MockRobot.ZERO for p in self.robot.servo_positions.values()))
+
+    def test_set_zero_is_refused_during_emergency_stop(self):
+        self.controller.emergency_stop()
+
+        result = self.controller.set_zero()
+
+        self.assertFalse(result["success"])
 
     def test_reset_emergency_stop_allows_motion_again(self):
         self.controller.emergency_stop()

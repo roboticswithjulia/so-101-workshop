@@ -1,9 +1,15 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
-from mock_robot import MockRobot
-from real_robot import RealRobotAdapter
-from robot_controller import RobotController
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python3 <folder>/<file>.py) as well as with python3 -m
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.mock_robot import MockRobot
+from src.real_robot import RealRobotAdapter
+from src.robot_controller import RobotController
 
 
 class RobotApp:
@@ -24,6 +30,7 @@ class RobotApp:
         self.log_var = tk.StringVar(value="Encara no s'ha executat cap acció.")
         self.mode_var = tk.StringVar(value="Mode: Demo")
         self.lang_var = tk.StringVar(value="Català")
+        self.zero_var = tk.BooleanVar(value=False)
 
         self._texts = {
             "ca": {
@@ -55,6 +62,13 @@ class RobotApp:
                 "start_instructor": "Mode instructor",
                 "start_demo": "Mode demostració",
                 "exit": "Sortir",
+                "instructor_title": "Accés d'instructor",
+                "instructor_text": "Només per al personal del taller. Utilitza la calibració i els diagnòstics amb seguretat.",
+                "reset_stop": "Restablir aturada d'emergència",
+                "diagnostics": "Executar diagnòstics",
+                "set_zero": "Fixar la posició actual com a zero",
+                "set_zero_confirm": "La posició actual de cada motor es guardarà com a posició zero (2048).\n\nEs desa a la memòria dels motors i substitueix el zero anterior.\n\nVols continuar?",
+                "close": "Tancar",
             },
             "en": {
                 "title": "LEERobot SO-101",
@@ -85,6 +99,13 @@ class RobotApp:
                 "start_instructor": "Instructor mode",
                 "start_demo": "Demo mode",
                 "exit": "Exit",
+                "instructor_title": "Instructor access",
+                "instructor_text": "Only for workshop staff. Use calibration and diagnostics safely.",
+                "reset_stop": "Reset emergency stop",
+                "diagnostics": "Run diagnostics",
+                "set_zero": "Set current pose as zero",
+                "set_zero_confirm": "The current position of every motor will be stored as its zero position (2048).\n\nThis is written to the motor memory and replaces the previous zero.\n\nContinue?",
+                "close": "Close",
             },
         }
 
@@ -249,27 +270,52 @@ class RobotApp:
         self.log_var.set(message)
 
     def _open_instructor_panel(self):
+        texts = self._texts[self.language]
         panel = tk.Toplevel(self.root)
-        panel.title("Instructor controls")
-        panel.geometry("420x220")
+        panel.title(texts["advanced"])
+        panel.geometry("440x260")
         panel.transient(self.root)
 
-        ttk.Label(panel, text="Instructor access", font=("Arial", 14, "bold")).pack(padx=12, pady=(12, 8), anchor="w")
-        ttk.Label(panel, text="Only for workshop staff. Use calibration and diagnostics safely.", wraplength=360).pack(padx=12, anchor="w")
+        ttk.Label(panel, text=texts["instructor_title"], font=("Arial", 14, "bold")).pack(padx=12, pady=(12, 8), anchor="w")
+        ttk.Label(panel, text=texts["instructor_text"], wraplength=380).pack(padx=12, anchor="w")
 
-        ttk.Button(panel, text="Reset emergency stop", command=self.reset_emergency_stop).pack(fill="x", padx=12, pady=(10, 6))
-        ttk.Button(panel, text="Run diagnostics", command=self._diagnostics).pack(fill="x", padx=12, pady=6)
-        ttk.Button(panel, text="Calibrate arm", command=self._calibration_notice).pack(fill="x", padx=12, pady=6)
-        ttk.Button(panel, text="Close", command=panel.destroy).pack(fill="x", padx=12, pady=(6, 12))
+        ttk.Button(panel, text=texts["reset_stop"], command=self.reset_emergency_stop).pack(fill="x", padx=12, pady=(10, 6))
+        ttk.Button(panel, text=texts["diagnostics"], command=self._diagnostics).pack(fill="x", padx=12, pady=6)
+        self.zero_var.set(False)
+        ttk.Checkbutton(
+            panel,
+            text=texts["set_zero"],
+            variable=self.zero_var,
+            command=lambda: self._on_set_zero_box(panel),
+        ).pack(fill="x", padx=12, pady=6)
+        ttk.Button(panel, text=texts["close"], command=panel.destroy).pack(fill="x", padx=12, pady=(6, 12))
 
     def _diagnostics(self):
         result = self.controller.reset_emergency_stop()
         self._update_status(result["message"])
         self._log("Diagnostics: emergency state reset")
 
-    def _calibration_notice(self):
-        self._update_status("Calibration should be done only by the instructor.")
-        self._log("Calibration request registered")
+    def _on_set_zero_box(self, parent=None):
+        """Ticking the box stores the current pose as the zero pose, after confirmation."""
+        if not self.zero_var.get():
+            return
+        texts = self._texts[self.language]
+        try:
+            confirmed = messagebox.askyesno(texts["set_zero"], texts["set_zero_confirm"], parent=parent or self.root)
+            if confirmed:
+                self.set_zero()
+            else:
+                self._log("Zero pose: cancelled")
+        finally:
+            # The box is a trigger, not a state: clear it once the action is done.
+            self.zero_var.set(False)
+
+    def set_zero(self):
+        result = self.controller.set_zero()
+        self._update_status(result["message"])
+        suffix = "" if self.mode == "real" else (" (demo)" if self.language == "en" else " (demo)")
+        self._log(("Acció: Fixar zero" if self.language == "ca" else "Action: Set zero") + suffix)
+        return result
 
     def go_home(self):
         result = self.controller.home()
