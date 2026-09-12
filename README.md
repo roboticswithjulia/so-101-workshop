@@ -153,16 +153,30 @@ This tool shows:
 
 ## Real serial protocol notes
 
-The scripts use the common Feetech serial protocol pattern used by STS3215 smart servos:
+The scripts use the Feetech STS/SCS serial protocol (Dynamixel-style) used by STS3215 smart servos:
 
-- packet header: `0x55 0x55`
+- packet header: `0xFF 0xFF` (note: `0x55 0x55` is the Hiwonder/LewanSoul protocol and STS3215 servos ignore it)
 - servo ID field
-- length field
-- instruction field
+- length field (number of parameters + 2)
+- instruction field (`0x01` ping, `0x02` read, `0x03` write)
 - parameter bytes
-- checksum byte
+- checksum byte: `~(id + length + instruction + params) & 0xFF`
 
-This is the standard pattern used by many Feetech serial servos, and it allows a simple ping scan to detect active IDs.
+A ping to ID 1 is `FF FF 01 02 01 FB` and the servo answers `FF FF 01 02 00 FC`. Many USB bus adapters are half-duplex and echo the transmitted bytes back, so the scanner strips its own packet before looking for the reply.
+
+Useful scanner options:
+
+```bash
+python3 servo_scan.py --ids 1-6              # quick check of the six arm servos
+python3 servo_scan.py --port /dev/ttyACM0    # scan one port only
+python3 servo_scan.py --baud 115200          # servos configured at another speed
+```
+
+If the port check fails with "Permission denied", add your user to the `dialout` group and log in again:
+
+```bash
+sudo usermod -aG dialout $USER
+```
 
 The live adapter in `real_robot.py` now performs:
 
