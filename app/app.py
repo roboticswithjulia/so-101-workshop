@@ -952,7 +952,7 @@ def apply_dark_theme(root):
               indicatorcolor=[("selected", CYAN), ("!selected", FIELD_BG)])
     # "Motors lliures" is the one control that must be easy to hit in a hurry.
     style.configure("Big.TCheckbutton", background=BG, foreground=FG,
-                    font=("Arial", 12, "bold"), indicatorsize=18, padding=(6, 4))
+                    font=("Arial", 11, "bold"), indicatorsize=14, padding=(4, 3))
     style.map("Big.TCheckbutton",
               background=[("active", BG)],
               foreground=[("disabled", MUTED_FG)],
