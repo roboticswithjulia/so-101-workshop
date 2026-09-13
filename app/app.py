@@ -850,7 +850,7 @@ def apply_dark_theme(root):
     style.configure("Panel.TLabel", background=PANEL_BG, foreground=FG)
 
     style.configure("TButton", background=TEAL, foreground=BG, bordercolor=TEAL,
-                    focuscolor=CYAN, padding=(8, 4))
+                    focuscolor=CYAN, padding=(4, 3))
     style.map("TButton",
               background=[("pressed", TEAL), ("active", CYAN), ("disabled", PANEL_BG)],
               foreground=[("disabled", MUTED_FG)])
@@ -962,8 +962,8 @@ class RobotApp:
 
         self.style = apply_dark_theme(root)
         root.title(TEXTS["window_title"])
-        root.geometry("720x840")
-        root.minsize(640, 660)
+        root.geometry("800x860")
+        root.minsize(700, 680)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         frame = ttk.Frame(root, padding=20)
@@ -977,7 +977,7 @@ class RobotApp:
         ttk.Label(
             titles,
             text=TEXTS["intro"].format(first=ids[0], last=ids[-1], port=port),
-            wraplength=540,
+            wraplength=600,
             justify="left",
         ).pack(anchor="w", pady=(8, 12))
         # Keep a reference: Tk drops an image that nothing else holds.
@@ -1022,7 +1022,7 @@ class RobotApp:
         self._build_program_tab(program_tab)
 
         self.status_var = tk.StringVar(value=TEXTS["ready"])
-        ttk.Label(frame, textvariable=self.status_var, wraplength=640, justify="left",
+        ttk.Label(frame, textvariable=self.status_var, wraplength=720, justify="left",
                   font=("Arial", 11, "bold"), style="Status.TLabel").pack(
             anchor="w", pady=(12, 6)
         )
@@ -1176,21 +1176,21 @@ class RobotApp:
         tool_row = ttk.Frame(parent)
         tool_row.pack(fill="x", pady=(8, 0))
         self.insert_button = ttk.Button(
-            tool_row, text=TEXTS["program_insert"], command=self.on_insert_position, width=24
+            tool_row, text=TEXTS["program_insert"], command=self.on_insert_position, width=22
         )
         self.insert_button.pack(side="left")
-        self.home_button = ttk.Button(tool_row, text=TEXTS["program_home"], command=self.on_save_home, width=22)
+        self.home_button = ttk.Button(tool_row, text=TEXTS["program_home"], command=self.on_save_home, width=20)
         self.home_button.pack(side="left", padx=(8, 0))
-        self.program_load_button = ttk.Button(tool_row, text=TEXTS["program_load"], command=self.on_load_program, width=10)
+        self.program_load_button = ttk.Button(tool_row, text=TEXTS["program_load"], command=self.on_load_program, width=11)
         self.program_load_button.pack(side="right")
-        self.program_save_button = ttk.Button(tool_row, text=TEXTS["program_save"], command=self.on_save_program, width=10)
+        self.program_save_button = ttk.Button(tool_row, text=TEXTS["program_save"], command=self.on_save_program, width=11)
         self.program_save_button.pack(side="right", padx=(0, 8))
-        self.program_reset_button = ttk.Button(tool_row, text=TEXTS["program_reset"], command=self.on_reset_program, width=10)
+        self.program_reset_button = ttk.Button(tool_row, text=TEXTS["program_reset"], command=self.on_reset_program, width=11)
         self.program_reset_button.pack(side="right", padx=(0, 8))
 
         self.task_step_var = tk.StringVar(value="")
-        ttk.Label(parent, textvariable=self.task_step_var, wraplength=620, justify="left").pack(anchor="w", pady=(8, 0))
-        ttk.Label(parent, text=TEXTS["program_hint"], font=("Arial", 8), wraplength=620, justify="left",
+        ttk.Label(parent, textvariable=self.task_step_var, wraplength=700, justify="left").pack(anchor="w", pady=(8, 0))
+        ttk.Label(parent, text=TEXTS["program_hint"], font=("Arial", 8), wraplength=700, justify="left",
                   style="Hint.TLabel").pack(
             anchor="w", pady=(2, 0)
         )
