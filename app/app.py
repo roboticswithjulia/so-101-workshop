@@ -166,6 +166,8 @@ FIELD_BG = "#1F1F1F"    # entry and text boxes, darker than the panels
 TAB_BG = "#1A1A1A"      # unselected tabs: almost black
 TEXT_BG = "#BDBDBD"     # the program editor and the log: mid grey
 TEXT_FG = "#1A1A1A"     # dark text on that light grey
+LOG_BG = "#3D3D3D"      # the log box: dark grey, a step lighter than BG
+LOG_FG = "#E6E6E6"      # light text on it
 FG = "#E6E6E6"          # normal text
 MUTED_FG = "#8C8C8C"    # hints and disabled text
 CYAN = "#6CDAE7"        # logo light cyan: sliders, headings, focus
@@ -1014,10 +1016,19 @@ def apply_dark_theme(root):
 def style_text(widget):
     """Colours for a plain tk.Text, which ttk styles do not reach.
 
-    These two boxes hold a lot of text to read and edit, so they are light grey
-    with dark text rather than dark like the rest of the window.
+    The program editor holds a lot of text to read and edit, so it is light grey
+    with dark text rather than dark like the rest of the window. The log box uses
+    style_log() instead.
     """
     widget.configure(bg=TEXT_BG, fg=TEXT_FG, insertbackground=TEAL,
+                     selectbackground=TEAL, selectforeground="#FFFFFF",
+                     highlightthickness=1, highlightbackground=TEAL, highlightcolor=CYAN,
+                     borderwidth=0)
+
+
+def style_log(widget):
+    """Colours for the log box: dark grey, one step lighter than the window."""
+    widget.configure(bg=LOG_BG, fg=LOG_FG, insertbackground=CYAN,
                      selectbackground=TEAL, selectforeground="#FFFFFF",
                      highlightthickness=1, highlightbackground=TEAL, highlightcolor=CYAN,
                      borderwidth=0)
@@ -1166,7 +1177,7 @@ class RobotApp:
         )
 
         self.log_box = tk.Text(frame, height=5, state="disabled", wrap="word")
-        style_text(self.log_box)
+        style_log(self.log_box)
         self.log_box.pack(fill="both", expand=True)
 
         self._set_task_controls()
