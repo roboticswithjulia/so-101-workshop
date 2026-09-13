@@ -24,6 +24,8 @@ Install the dependencies first: pip install -r requirements.txt
 """
 
 import argparse
+import base64
+import io
 import json
 from collections import namedtuple
 from datetime import datetime
@@ -33,6 +35,11 @@ try:
     from tkinter import filedialog, ttk
 except ImportError:  # pragma: no cover - headless machines
     tk = None
+
+try:  # only used to round the button corners; the app runs fine without it
+    from PIL import Image, ImageDraw
+except ImportError:  # pragma: no cover - optional
+    Image = ImageDraw = None
 
 import sys
 from pathlib import Path
@@ -171,6 +178,10 @@ TEAL = "#008B8B"        # logo dark cyan: troughs, borders, pressed buttons
 LOGO_PATH = Path(__file__).resolve().parents[1] / "logo" / "Logo_JMR.png"
 # Every button in the top row is this wide, so they line up.
 BUTTON_WIDTH = 22
+# Corner radius of the buttons, in pixels.
+BUTTON_RADIUS = 8
+# Buttons, joint names, panel titles and field labels are all bold.
+BOLD_FONT = ("Arial", 10, "bold")
 # How often the live angle of each joint is re-read while connected (milliseconds).
 ANGLE_REFRESH_MS = 400
 # A slider sends its goal when the mouse button is released. Keyboard changes
@@ -828,6 +839,54 @@ def summarize(results, error):
 # -- Tkinter UI ----------------------------------------------------------------
 
 
+def _rounded_png(fill, radius=BUTTON_RADIUS, size=None):
+    """A rounded rectangle as PNG bytes, for a ttk image element."""
+    side = 2 * radius + 2
+    size = size or (side, side)
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    ImageDraw.Draw(image).rounded_rectangle(
+        (0, 0, size[0] - 1, size[1] - 1), radius=radius, fill=fill
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def rounded_button_style(style, root):
+    """Give TButton rounded corners. Returns the images, which must be kept alive.
+
+    ttk has no border radius, so the button is drawn from a 9-patch image that
+    Tk stretches. Without Pillow the buttons simply stay square.
+    """
+    if Image is None or tk is None:
+        return []
+    states = {"normal": TEAL, "active": CYAN, "pressed": TEAL, "disabled": PANEL_BG}
+    try:
+        images = {
+            name: tk.PhotoImage(
+                master=root, data=base64.b64encode(_rounded_png(colour)), name=f"btn_{name}"
+            )
+            for name, colour in states.items()
+        }
+        style.element_create(
+            "Rounded.button", "image", images["normal"],
+            ("pressed", images["pressed"]),
+            ("active", images["active"]),
+            ("disabled", images["disabled"]),
+            border=BUTTON_RADIUS, sticky="nsew", padding=(10, 5),
+        )
+        style.layout("TButton", [(
+            "Rounded.button", {"sticky": "nsew", "children": [(
+                "Button.padding", {"sticky": "nsew", "children": [
+                    ("Button.label", {"sticky": "nsew"})
+                ]}
+            )]}
+        )])
+    except Exception:  # pragma: no cover - depends on the Tk build
+        return []
+    return list(images.values())
+
+
 def apply_dark_theme(root):
     """Black window with the logo's cyan as the accent. Returns the ttk.Style."""
     style = ttk.Style(root)
@@ -847,16 +906,25 @@ def apply_dark_theme(root):
               indicatorcolor=[("selected", CYAN), ("!selected", FIELD_BG)])
 
     style.configure("TLabelframe", background=PANEL_BG, bordercolor=TEAL)
-    style.configure("TLabelframe.Label", background=PANEL_BG, foreground=CYAN)
+    style.configure("TLabelframe.Label", background=PANEL_BG, foreground=CYAN, font=BOLD_FONT)
     # Frames inside a label frame must not fall back to the window background.
     style.configure("Panel.TFrame", background=PANEL_BG)
-    style.configure("Panel.TLabel", background=PANEL_BG, foreground=FG)
+    style.configure("Panel.TLabel", background=PANEL_BG, foreground=FG, font=BOLD_FONT)
 
-    style.configure("TButton", background=TEAL, foreground=BG, bordercolor=TEAL,
-                    focuscolor=CYAN, padding=(4, 3))
+    # The rounded image element paints the button. Its transparent corners are
+    # flattened against this background, so it must match the container, not the
+    # button colour, or the rounding is invisible.
+    style.configure("TButton", background=BG, foreground=BG, bordercolor=TEAL,
+                    focuscolor=CYAN, padding=(4, 3), font=BOLD_FONT)
     style.map("TButton",
-              background=[("pressed", TEAL), ("active", CYAN), ("disabled", PANEL_BG)],
-              foreground=[("disabled", MUTED_FG)])
+              background=[("pressed", BG), ("active", BG), ("disabled", BG)],
+              foreground=[("active", BG), ("disabled", MUTED_FG)])
+    # Same, for the buttons that sit inside a label frame.
+    style.configure("Panel.TButton", background=PANEL_BG, foreground=BG,
+                    focuscolor=CYAN, padding=(4, 3), font=BOLD_FONT)
+    style.map("Panel.TButton",
+              background=[("pressed", PANEL_BG), ("active", PANEL_BG), ("disabled", PANEL_BG)],
+              foreground=[("active", BG), ("disabled", MUTED_FG)])
 
     style.configure("TEntry", fieldbackground=FIELD_BG, foreground=FG,
                     insertcolor=CYAN, bordercolor=TEAL)
@@ -873,6 +941,7 @@ def apply_dark_theme(root):
               troughcolor=[("disabled", PANEL_BG)])
 
     style.configure("Accent.TLabel", background=PANEL_BG, foreground=CYAN)
+    style.configure("Unit.TLabel", background=PANEL_BG, foreground=MUTED_FG)
     style.configure("Hint.TLabel", background=PANEL_BG, foreground=MUTED_FG)
     style.configure("Title.TLabel", background=BG, foreground=CYAN)
     style.configure("Status.TLabel", background=BG, foreground=CYAN)
@@ -884,8 +953,8 @@ def apply_dark_theme(root):
     style.map("TNotebook.Tab",
               background=[("selected", TEAL), ("active", CYAN)],
               foreground=[("selected", "#FFFFFF"), ("active", BG)],
-              padding=[("selected", (24, 12))],
-              font=[("selected", ("Arial", 12, "bold"))])
+              padding=[("selected", (16, 7))],
+              font=[("selected", BOLD_FONT)])
     style.configure("TScrollbar", background=TEAL, troughcolor=FIELD_BG, bordercolor=BG,
                     arrowcolor=FG)
     return style
@@ -973,6 +1042,8 @@ class RobotApp:
         self._angle_after = None  # timer that re-reads the live joint angles
 
         self.style = apply_dark_theme(root)
+        # Tk drops images nothing holds, which would blank the buttons.
+        self._button_images = rounded_button_style(self.style, root)
         root.title(TEXTS["window_title"])
         root.geometry("800x860")
         root.minsize(700, 680)
@@ -1088,7 +1159,7 @@ class RobotApp:
             entry.bind("<Return>", lambda event, sid=servo_id: self.on_entry(sid))
             entry.bind("<KP_Enter>", lambda event, sid=servo_id: self.on_entry(sid))
             self.entries[servo_id] = entry
-            ttk.Label(box, text="°", style="Panel.TLabel").grid(row=row, column=4, sticky="w")
+            ttk.Label(box, text="°", style="Unit.TLabel").grid(row=row, column=4, sticky="w")
             low_var = tk.StringVar(value=f"{low:g}")
             high_var = tk.StringVar(value=f"{high:g}")
             limit_entries = []
@@ -1119,15 +1190,16 @@ class RobotApp:
         ttk.Label(row, text=TEXTS["motion_speed"], style="Panel.TLabel").pack(side="left")
         self.speed_entry = ttk.Entry(row, textvariable=self.speed_var, width=7, justify="right")
         self.speed_entry.pack(side="left", padx=(6, 2))
-        ttk.Label(row, text=TEXTS["unit_speed"], style="Panel.TLabel").pack(side="left", padx=(0, 16))
+        ttk.Label(row, text=TEXTS["unit_speed"], style="Unit.TLabel").pack(side="left", padx=(0, 16))
         ttk.Label(row, text=TEXTS["motion_acc"], style="Panel.TLabel").pack(side="left")
         self.acc_entry = ttk.Entry(row, textvariable=self.acc_var, width=7, justify="right")
         self.acc_entry.pack(side="left", padx=(6, 2))
-        ttk.Label(row, text=TEXTS["unit_acc"], style="Panel.TLabel").pack(side="left")
+        ttk.Label(row, text=TEXTS["unit_acc"], style="Unit.TLabel").pack(side="left")
         for entry in (self.speed_entry, self.acc_entry):
             entry.bind("<Return>", lambda event: self.on_motion_entry())
             entry.bind("<KP_Enter>", lambda event: self.on_motion_entry())
-        self.motion_set_button = ttk.Button(row, text=TEXTS["motion_set_button"], command=self.on_motion_entry, width=8)
+        self.motion_set_button = ttk.Button(row, text=TEXTS["motion_set_button"], command=self.on_motion_entry,
+                                             width=8, style="Panel.TButton")
         self.motion_set_button.pack(side="left", padx=(16, 0))
 
         second = ttk.Frame(box, style="Panel.TFrame")
@@ -1137,16 +1209,17 @@ class RobotApp:
         ttk.Label(second, text=TEXTS["durations_move"], style="Panel.TLabel").pack(side="left")
         self.move_seconds_entry = ttk.Entry(second, textvariable=self.move_seconds_var, width=7, justify="right")
         self.move_seconds_entry.pack(side="left", padx=(6, 2))
-        ttk.Label(second, text=TEXTS["unit_seconds"], style="Panel.TLabel").pack(side="left", padx=(0, 16))
+        ttk.Label(second, text=TEXTS["unit_seconds"], style="Unit.TLabel").pack(side="left", padx=(0, 16))
         ttk.Label(second, text=TEXTS["durations_gripper"], style="Panel.TLabel").pack(side="left")
         self.gripper_seconds_entry = ttk.Entry(second, textvariable=self.gripper_seconds_var, width=7, justify="right")
         self.gripper_seconds_entry.pack(side="left", padx=(6, 2))
-        ttk.Label(second, text=TEXTS["unit_seconds"], style="Panel.TLabel").pack(side="left")
+        ttk.Label(second, text=TEXTS["unit_seconds"], style="Unit.TLabel").pack(side="left")
         for entry in (self.move_seconds_entry, self.gripper_seconds_entry):
             entry.bind("<Return>", lambda event: self.on_durations_entry())
             entry.bind("<KP_Enter>", lambda event: self.on_durations_entry())
         self.durations_set_button = ttk.Button(
-            second, text=TEXTS["motion_set_button"], command=self.on_durations_entry, width=8
+            second, text=TEXTS["motion_set_button"], command=self.on_durations_entry,
+            width=8, style="Panel.TButton",
         )
         self.durations_set_button.pack(side="left", padx=(16, 0))
 

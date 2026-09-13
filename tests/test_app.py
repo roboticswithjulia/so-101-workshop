@@ -975,3 +975,37 @@ class LogoTests(unittest.TestCase):
 
     def test_a_missing_logo_is_not_an_error(self):
         self.assertIsNone(robot_app.load_logo(path="/no/such/logo.png"))
+
+
+class ThemeTests(unittest.TestCase):
+    def test_the_palette_uses_the_logo_colours(self):
+        self.assertEqual(robot_app.CYAN.upper(), "#6CDAE7")
+        self.assertEqual(robot_app.TEAL.upper(), "#008B8B")
+
+    @unittest.skipUnless(HAS_DISPLAY, "no usable display for Tk")
+    def test_the_rounded_button_element_is_installed(self):
+        root = robot_app.tk.Tk()
+        root.withdraw()
+        try:
+            style = robot_app.apply_dark_theme(root)
+            images = robot_app.rounded_button_style(style, root)
+            if not images:
+                self.skipTest("Pillow not available")
+            self.assertIn("Rounded.button", style.element_names())
+            self.assertEqual(style.layout("TButton")[0][0], "Rounded.button")
+            # The transparent corners flatten against this, so it must be the
+            # container colour, not the button colour.
+            self.assertEqual(style.lookup("TButton", "background"), robot_app.BG)
+            self.assertEqual(style.lookup("Panel.TButton", "background"), robot_app.PANEL_BG)
+        finally:
+            root.destroy()
+
+    def test_rounded_corners_are_transparent(self):
+        if robot_app.Image is None:
+            self.skipTest("Pillow not available")
+        from PIL import Image as PILImage
+        import io as _io
+        png = robot_app._rounded_png(robot_app.TEAL)
+        image = PILImage.open(_io.BytesIO(png))
+        self.assertEqual(image.getpixel((0, 0))[3], 0)          # corner see-through
+        self.assertEqual(image.getpixel((9, 9))[:3], (0, 139, 139))  # middle is teal
