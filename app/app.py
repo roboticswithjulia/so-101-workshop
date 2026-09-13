@@ -177,11 +177,13 @@ TEAL = "#008B8B"        # logo dark cyan: troughs, borders, pressed buttons
 #            --export-area-drawing --export-height=72 logo/Logo_JMR.svg
 LOGO_PATH = Path(__file__).resolve().parents[1] / "logo" / "Logo_JMR.png"
 # Every button in the top row is this wide, so they line up.
-BUTTON_WIDTH = 22
+BUTTON_WIDTH = 19
 # Corner radius of the buttons, in pixels.
 BUTTON_RADIUS = 8
 # Buttons, joint names, panel titles and field labels are all bold.
 BOLD_FONT = ("Arial", 10, "bold")
+# Light grey for the text on buttons and tabs, which sit on the logo teal.
+BUTTON_FG = "#D9D9D9"
 # How often the live angle of each joint is re-read while connected (milliseconds).
 ANGLE_REFRESH_MS = 400
 # A slider sends its goal when the mouse button is released. Keyboard changes
@@ -904,6 +906,13 @@ def apply_dark_theme(root):
               background=[("active", BG)],
               foreground=[("disabled", MUTED_FG)],
               indicatorcolor=[("selected", CYAN), ("!selected", FIELD_BG)])
+    # "Motors lliures" is the one control that must be easy to hit in a hurry.
+    style.configure("Big.TCheckbutton", background=BG, foreground=FG,
+                    font=("Arial", 12, "bold"), indicatorsize=18, padding=(6, 4))
+    style.map("Big.TCheckbutton",
+              background=[("active", BG)],
+              foreground=[("disabled", MUTED_FG)],
+              indicatorcolor=[("selected", CYAN), ("!selected", FIELD_BG)])
 
     style.configure("TLabelframe", background=PANEL_BG, bordercolor=TEAL)
     style.configure("TLabelframe.Label", background=PANEL_BG, foreground=CYAN, font=BOLD_FONT)
@@ -914,13 +923,13 @@ def apply_dark_theme(root):
     # The rounded image element paints the button. Its transparent corners are
     # flattened against this background, so it must match the container, not the
     # button colour, or the rounding is invisible.
-    style.configure("TButton", background=BG, foreground=BG, bordercolor=TEAL,
+    style.configure("TButton", background=BG, foreground=BUTTON_FG, bordercolor=TEAL,
                     focuscolor=CYAN, padding=(4, 3), font=BOLD_FONT)
     style.map("TButton",
               background=[("pressed", BG), ("active", BG), ("disabled", BG)],
               foreground=[("active", BG), ("disabled", MUTED_FG)])
     # Same, for the buttons that sit inside a label frame.
-    style.configure("Panel.TButton", background=PANEL_BG, foreground=BG,
+    style.configure("Panel.TButton", background=PANEL_BG, foreground=BUTTON_FG,
                     focuscolor=CYAN, padding=(4, 3), font=BOLD_FONT)
     style.map("Panel.TButton",
               background=[("pressed", PANEL_BG), ("active", PANEL_BG), ("disabled", PANEL_BG)],
@@ -943,16 +952,16 @@ def apply_dark_theme(root):
     style.configure("Accent.TLabel", background=PANEL_BG, foreground=CYAN)
     style.configure("Unit.TLabel", background=PANEL_BG, foreground=MUTED_FG)
     style.configure("Hint.TLabel", background=PANEL_BG, foreground=MUTED_FG)
-    style.configure("Title.TLabel", background=BG, foreground=CYAN)
+    style.configure("Title.TLabel", background=BG, foreground=TEAL)
     style.configure("Status.TLabel", background=BG, foreground=CYAN)
     style.configure("TNotebook", background=BG, bordercolor=TEAL)
     # The tab you are on is the logo teal; the ones you can switch to are black.
     # The selected tab is the logo teal and grows, so it reads as the one you are on.
-    style.configure("TNotebook.Tab", background=TAB_BG, foreground=MUTED_FG,
+    style.configure("TNotebook.Tab", background=TAB_BG, foreground=BUTTON_FG,
                     padding=(14, 6), font=("Arial", 10))
     style.map("TNotebook.Tab",
               background=[("selected", TEAL), ("active", CYAN)],
-              foreground=[("selected", "#FFFFFF"), ("active", BG)],
+              foreground=[("selected", BUTTON_FG), ("active", BG)],
               padding=[("selected", (16, 7))],
               font=[("selected", BOLD_FONT)])
     style.configure("TScrollbar", background=TEAL, troughcolor=FIELD_BG, bordercolor=BG,
@@ -1066,7 +1075,7 @@ class RobotApp:
         # Keep a reference: Tk drops an image that nothing else holds.
         self.logo_image = load_logo(root)
         if self.logo_image is not None:
-            ttk.Label(header, image=self.logo_image).pack(side="right", anchor="n", padx=(12, 0))
+            ttk.Label(header, image=self.logo_image).pack(side="right", anchor="n", padx=(12, 28))
 
         top = ttk.Frame(frame)
         top.pack(fill="x")
@@ -1078,9 +1087,10 @@ class RobotApp:
         self.zero_all_button.pack(side="left", padx=(8, 0))
         self.free_var = tk.BooleanVar(value=False)
         self.free_check = ttk.Checkbutton(
-            top, text=TEXTS["torque_free"], variable=self.free_var, command=self.on_toggle_torque
+            top, text=TEXTS["torque_free"], variable=self.free_var,
+            command=self.on_toggle_torque, style="Big.TCheckbutton",
         )
-        self.free_check.pack(side="right")
+        self.free_check.pack(side="right", padx=(16, 14))
 
         self.limits = dict(JOINT_LIMITS)
         self.speed, self.acc = SAFE_SPEED, SAFE_ACC
@@ -1274,7 +1284,8 @@ class RobotApp:
         self.program_reset_button.pack(side="right", padx=(0, 8))
 
         self.task_step_var = tk.StringVar(value="")
-        ttk.Label(parent, textvariable=self.task_step_var, wraplength=700, justify="left").pack(anchor="w", pady=(8, 0))
+        ttk.Label(parent, textvariable=self.task_step_var, wraplength=700, justify="left",
+                  font=BOLD_FONT).pack(anchor="w", pady=(8, 0))
         ttk.Label(parent, text=TEXTS["program_hint"], font=("Arial", 8), wraplength=700, justify="left",
                   style="Hint.TLabel").pack(
             anchor="w", pady=(2, 0)
