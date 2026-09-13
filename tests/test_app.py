@@ -1009,3 +1009,34 @@ class ThemeTests(unittest.TestCase):
         image = PILImage.open(_io.BytesIO(png))
         self.assertEqual(image.getpixel((0, 0))[3], 0)          # corner see-through
         self.assertEqual(image.getpixel((9, 9))[:3], (0, 139, 139))  # middle is teal
+
+
+class RoundedTabTests(unittest.TestCase):
+    def test_only_the_top_corners_are_rounded(self):
+        if robot_app.Image is None:
+            self.skipTest("Pillow not available")
+        from PIL import Image as PILImage
+        import io as _io
+        radius = robot_app.BUTTON_RADIUS
+        size = (2 * radius + 4, 2 * radius + 8)
+        png = robot_app._rounded_png(robot_app.TEAL, radius, size, corners=(True, True, False, False))
+        image = PILImage.open(_io.BytesIO(png))
+
+        self.assertEqual(image.getpixel((0, 0))[3], 0)                       # top left cut away
+        self.assertEqual(image.getpixel((size[0] - 1, 0))[3], 0)             # top right too
+        self.assertEqual(image.getpixel((0, size[1] - 1))[3], 255)           # bottom left square
+        self.assertEqual(image.getpixel((size[0] - 1, size[1] - 1))[3], 255)
+
+    @unittest.skipUnless(HAS_DISPLAY, "no usable display for Tk")
+    def test_the_tab_element_is_installed(self):
+        root = robot_app.tk.Tk()
+        root.withdraw()
+        try:
+            style = robot_app.apply_dark_theme(root)
+            images = robot_app.rounded_tab_style(style, root)
+            if not images:
+                self.skipTest("Pillow not available")
+            self.assertEqual(len(images), 3)  # normal, selected, hover
+            self.assertEqual(style.layout("TNotebook.Tab")[0][0], "Rounded.tab")
+        finally:
+            root.destroy()

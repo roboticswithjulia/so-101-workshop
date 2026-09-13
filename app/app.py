@@ -841,13 +841,19 @@ def summarize(results, error):
 # -- Tkinter UI ----------------------------------------------------------------
 
 
-def _rounded_png(fill, radius=BUTTON_RADIUS, size=None):
-    """A rounded rectangle as PNG bytes, for a ttk image element."""
+def _rounded_png(fill, radius=BUTTON_RADIUS, size=None, corners=None):
+    """A rounded rectangle as PNG bytes, for a ttk image element.
+
+    `corners` is (top-left, top-right, bottom-right, bottom-left); the default
+    rounds all four. Tabs pass (True, True, False, False) so only the top is
+    rounded and they still sit flush on the panel below.
+    """
     side = 2 * radius + 2
     size = size or (side, side)
     image = Image.new("RGBA", size, (0, 0, 0, 0))
     ImageDraw.Draw(image).rounded_rectangle(
-        (0, 0, size[0] - 1, size[1] - 1), radius=radius, fill=fill
+        (0, 0, size[0] - 1, size[1] - 1), radius=radius, fill=fill,
+        corners=corners or (True, True, True, True),
     )
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
@@ -881,6 +887,42 @@ def rounded_button_style(style, root):
             "Rounded.button", {"sticky": "nsew", "children": [(
                 "Button.padding", {"sticky": "nsew", "children": [
                     ("Button.label", {"sticky": "nsew"})
+                ]}
+            )]}
+        )])
+    except Exception:  # pragma: no cover - depends on the Tk build
+        return []
+    return list(images.values())
+
+
+def rounded_tab_style(style, root):
+    """Round the top corners of the notebook tabs. Returns the images to keep."""
+    if Image is None or tk is None:
+        return []
+    radius = BUTTON_RADIUS
+    # Pillow needs a few pixels more than 2*radius when only some corners round.
+    size = (2 * radius + 4, 2 * radius + 8)
+    states = {"tab": TAB_BG, "tabsel": TEAL, "tabact": CYAN}
+    try:
+        images = {
+            name: tk.PhotoImage(
+                master=root, name=f"nb_{name}",
+                data=base64.b64encode(
+                    _rounded_png(colour, radius, size, corners=(True, True, False, False))
+                ),
+            )
+            for name, colour in states.items()
+        }
+        style.element_create(
+            "Rounded.tab", "image", images["tab"],
+            ("selected", images["tabsel"]),
+            ("active", images["tabact"]),
+            border=(radius, radius, radius, 2), sticky="nsew", padding=(14, 6),
+        )
+        style.layout("TNotebook.Tab", [(
+            "Rounded.tab", {"sticky": "nsew", "children": [(
+                "Notebook.padding", {"side": "top", "sticky": "nsew", "children": [
+                    ("Notebook.label", {"side": "top", "sticky": ""})
                 ]}
             )]}
         )])
@@ -1053,6 +1095,7 @@ class RobotApp:
         self.style = apply_dark_theme(root)
         # Tk drops images nothing holds, which would blank the buttons.
         self._button_images = rounded_button_style(self.style, root)
+        self._tab_images = rounded_tab_style(self.style, root)
         root.title(TEXTS["window_title"])
         root.geometry("800x860")
         root.minsize(700, 680)
@@ -1087,7 +1130,9 @@ class RobotApp:
         self.zero_all_button.pack(side="left", padx=(8, 0))
         self.free_var = tk.BooleanVar(value=False)
         self.free_check = ttk.Checkbutton(
-            top, text=TEXTS["torque_free"], variable=self.free_var,
+            # The leading spaces are the gap between the box and the words: ttk
+            # gives no option for it.
+            top, text="  " + TEXTS["torque_free"], variable=self.free_var,
             command=self.on_toggle_torque, style="Big.TCheckbutton",
         )
         self.free_check.pack(side="right", padx=(16, 14))
