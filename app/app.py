@@ -157,7 +157,7 @@ BG = "#2B2B2B"          # window background, dark grey
 PANEL_BG = "#333333"    # frames and label frames
 FIELD_BG = "#1F1F1F"    # entry and text boxes, darker than the panels
 TAB_BG = "#1A1A1A"      # unselected tabs: almost black
-TEXT_BG = "#D9D9D9"     # the program editor and the log: light grey
+TEXT_BG = "#BDBDBD"     # the program editor and the log: mid grey
 TEXT_FG = "#1A1A1A"     # dark text on that light grey
 FG = "#E6E6E6"          # normal text
 MUTED_FG = "#8C8C8C"    # hints and disabled text
@@ -878,10 +878,14 @@ def apply_dark_theme(root):
     style.configure("Status.TLabel", background=BG, foreground=CYAN)
     style.configure("TNotebook", background=BG, bordercolor=TEAL)
     # The tab you are on is the logo teal; the ones you can switch to are black.
-    style.configure("TNotebook.Tab", background=TAB_BG, foreground=MUTED_FG, padding=(14, 6))
+    # The selected tab is the logo teal and grows, so it reads as the one you are on.
+    style.configure("TNotebook.Tab", background=TAB_BG, foreground=MUTED_FG,
+                    padding=(14, 6), font=("Arial", 10))
     style.map("TNotebook.Tab",
               background=[("selected", TEAL), ("active", CYAN)],
-              foreground=[("selected", "#FFFFFF"), ("active", BG)])
+              foreground=[("selected", "#FFFFFF"), ("active", BG)],
+              padding=[("selected", (24, 12))],
+              font=[("selected", ("Arial", 12, "bold"))])
     style.configure("TScrollbar", background=TEAL, troughcolor=FIELD_BG, bordercolor=BG,
                     arrowcolor=FG)
     return style
