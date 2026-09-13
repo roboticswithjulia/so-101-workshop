@@ -1,0 +1,67 @@
+{
+  "saved_at": "2026-09-12T22:16:03",
+  "port": "/dev/ttyACM0",
+  "zero_position": 2048,
+  "servos": {
+    "1": {
+      "joint": "Base",
+      "position": 2049,
+      "degrees": 0.1,
+      "inverted": false,
+      "limits": [
+        -75,
+        75
+      ]
+    },
+    "2": {
+      "joint": "Espatlla",
+      "position": 2058,
+      "degrees": 0.9,
+      "inverted": false,
+      "limits": [
+        -75,
+        60
+      ]
+    },
+    "3": {
+      "joint": "Colze",
+      "position": 2053,
+      "degrees": -0.4,
+      "inverted": true,
+      "limits": [
+        -25,
+        75
+      ]
+    },
+    "4": {
+      "joint": "Canell",
+      "position": 2048,
+      "degrees": 0.0,
+      "inverted": false,
+      "limits": [
+        -70,
+        18
+      ]
+    },
+    "5": {
+      "joint": "Gir del canell",
+      "position": 2048,
+      "degrees": 0.0,
+      "inverted": false,
+      "limits": [
+        -75,
+        75
+      ]
+    },
+    "6": {
+      "joint": "Pinça",
+      "position": 2048,
+      "degrees": 0.0,
+      "inverted": false,
+      "limits": [
+        -25,
+        45
+      ]
+    }
+  }
+}
