@@ -36,6 +36,12 @@ class FakePacketHandler:
     def ReadMoving(self, servo_id):
         return self.servos[servo_id].get(so101_bus.REG_MOVING, 0), COMM_SUCCESS, 0
 
+    def write2ByteTxRx(self, servo_id, address, value):
+        if servo_id not in self.servos:
+            return COMM_RX_TIMEOUT, 0
+        self.servos[servo_id][address] = value
+        return COMM_SUCCESS, 0
+
     def write1ByteTxRx(self, servo_id, address, value):
         if servo_id not in self.servos:
             return COMM_RX_TIMEOUT, 0
@@ -57,10 +63,14 @@ class FakePacketHandler:
         return COMM_SUCCESS, 0
 
     def unLockEprom(self, servo_id):
+        if servo_id not in self.servos:
+            return COMM_RX_TIMEOUT, 0
         self.servos[servo_id]["lock"] = 0
         return COMM_SUCCESS, 0
 
     def LockEprom(self, servo_id):
+        if servo_id not in self.servos:
+            return COMM_RX_TIMEOUT, 0
         self.servos[servo_id]["lock"] = 1
         return COMM_SUCCESS, 0
 

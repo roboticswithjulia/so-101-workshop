@@ -48,8 +48,8 @@ POSITION_MIDDLE = 2048
 ZERO_TOLERANCE = 8  # steps; how close to 2048 the servo must read after zeroing
 # Speed (steps/s) and acceleration (100 steps/s^2 units) used only to hold a
 # joint in place; the same gentle values as the app's moves.
-HOLD_SPEED = 600
-HOLD_ACC = 30
+HOLD_SPEED = 300
+HOLD_ACC = 15
 
 
 def read_positions(packet_handler, ids):
