@@ -153,9 +153,10 @@ MOVE_SECONDS = 1.0
 GRIPPER_SECONDS = 1.0
 # Dark palette. CYAN and TEAL are the two colours of the logo, so the sliders and
 # the accents match it.
-BG = "#0D0D0D"          # window background
-PANEL_BG = "#161616"    # frames and label frames
-FIELD_BG = "#1F1F1F"    # entry and text boxes
+BG = "#2B2B2B"          # window background, dark grey
+PANEL_BG = "#333333"    # frames and label frames
+FIELD_BG = "#1F1F1F"    # entry and text boxes, darker than the panels
+TAB_BG = "#1A1A1A"      # the selected tab: darker than everything around it
 FG = "#E6E6E6"          # normal text
 MUTED_FG = "#8C8C8C"    # hints and disabled text
 CYAN = "#6CDAE7"        # logo light cyan: sliders, headings, focus
@@ -874,10 +875,12 @@ def apply_dark_theme(root):
     style.configure("Title.TLabel", background=BG, foreground=CYAN)
     style.configure("Status.TLabel", background=BG, foreground=CYAN)
     style.configure("TNotebook", background=BG, bordercolor=TEAL)
-    style.configure("TNotebook.Tab", background=PANEL_BG, foreground=MUTED_FG, padding=(14, 6))
+    # Inverted on purpose: the tab you are on is dark, the ones you can go to are
+    # the logo teal.
+    style.configure("TNotebook.Tab", background=TEAL, foreground=BG, padding=(14, 6))
     style.map("TNotebook.Tab",
-              background=[("selected", TEAL)],
-              foreground=[("selected", BG)])
+              background=[("selected", TAB_BG), ("active", CYAN)],
+              foreground=[("selected", CYAN), ("active", BG)])
     style.configure("TScrollbar", background=TEAL, troughcolor=FIELD_BG, bordercolor=BG,
                     arrowcolor=FG)
     return style

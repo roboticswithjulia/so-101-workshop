@@ -77,7 +77,7 @@ The `--system-site-packages` flag keeps the system Tkinter visible inside the vi
 
 ## Run the app
 
-A Catalan window for instructors, on a black background with the two colours of the JMRobotics logo as the accent: `#6CDAE7` for the sliders, headings and focus, and `#008B8B` for the troughs, borders and buttons. The palette is the block of constants at the top of `app/app.py`, and `apply_dark_theme()` builds the ttk style from it. It connects to the arm when it opens (or with the "Connectar" button), holds every servo where it is and enables its torque.
+A Catalan window for instructors, on a dark grey background with the two colours of the JMRobotics logo as the accent: `#6CDAE7` for the sliders, headings and focus, and `#008B8B` for the troughs, borders and buttons. The palette is the block of constants at the top of `app/app.py`, and `apply_dark_theme()` builds the ttk style from it. It connects to the arm when it opens (or with the "Connectar" button), holds every servo where it is and enables its torque.
 
 **Joint sliders.** One slider per joint moves that servo as an offset in degrees from the zero pose:
 
