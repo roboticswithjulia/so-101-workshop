@@ -917,7 +917,7 @@ def rounded_tab_style(style, root):
             "Rounded.tab", "image", images["tab"],
             ("selected", images["tabsel"]),
             ("active", images["tabact"]),
-            border=(radius, radius, radius, 2), sticky="nsew", padding=(14, 6),
+            border=(radius, radius, radius, 2), sticky="nsew", padding=(10, 4),
         )
         style.layout("TNotebook.Tab", [(
             "Rounded.tab", {"sticky": "nsew", "children": [(
@@ -1000,11 +1000,11 @@ def apply_dark_theme(root):
     # The tab you are on is the logo teal; the ones you can switch to are black.
     # The selected tab is the logo teal and grows, so it reads as the one you are on.
     style.configure("TNotebook.Tab", background=TAB_BG, foreground=BUTTON_FG,
-                    padding=(14, 6), font=("Arial", 10))
+                    padding=(10, 4), font=("Arial", 10))
     style.map("TNotebook.Tab",
               background=[("selected", TEAL), ("active", CYAN)],
               foreground=[("selected", BUTTON_FG), ("active", BG)],
-              padding=[("selected", (16, 7))],
+              padding=[("selected", (12, 5))],
               font=[("selected", BOLD_FONT)])
     style.configure("TScrollbar", background=TEAL, troughcolor=FIELD_BG, bordercolor=BG,
                     arrowcolor=FG)
