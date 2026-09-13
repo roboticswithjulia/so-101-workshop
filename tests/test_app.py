@@ -80,62 +80,10 @@ class SetZeroTests(unittest.TestCase):
         self.assertIn("No s'ha pogut aplicar", message)
 
 
-class SavePositionsTests(unittest.TestCase):
-    def test_save_positions_writes_a_json_file(self):
-        handler = FakePacketHandler({1: healthy_servo(2048), 3: healthy_servo(1707), 6: healthy_servo(2560)})
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "positions.json")
-            record, error = robot_app.save_positions(handler, [1, 2, 3, 6], path, "/dev/ttyACM0")
-            with open(path, encoding="utf-8") as handle:
-                written = json.load(handle)
-
-        self.assertIsNone(error)
-        self.assertEqual(written, record)
-        self.assertEqual(written["port"], "/dev/ttyACM0")
-        self.assertEqual(written["zero_position"], 2048)
-        self.assertEqual(sorted(written["servos"]), ["1", "3", "6"])  # servo 2 did not answer
-        self.assertEqual(written["servos"]["1"], {
-            "joint": "Base", "position": 2048, "degrees": 0.0, "inverted": False, "limits": [-75, 75],
-        })
-        # Colze is inverted: a raw position below 2048 is a positive angle.
-        self.assertEqual(written["servos"]["3"]["degrees"], 30.0)
-        self.assertTrue(written["servos"]["3"]["inverted"])
-        self.assertEqual(written["servos"]["6"]["degrees"], 45.0)
-        self.assertIn("saved_at", written)
-
-    def test_save_positions_uses_the_limits_it_is_given(self):
-        handler = FakePacketHandler({4: healthy_servo()})
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "p.json")
-            record, error = robot_app.save_positions(handler, [4], path, "/dev/fake", limits={4: (-40, 40)})
-
-        self.assertIsNone(error)
-        self.assertEqual(record["servos"]["4"]["limits"], [-40, 40])
-
-    def test_save_positions_reports_when_no_servo_answers(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "p.json")
-            record, error = robot_app.save_positions(FakePacketHandler({}), [1, 2], path, "/dev/fake")
-            self.assertFalse(os.path.exists(path))
-
-        self.assertIsNone(record)
-        self.assertIn("Cap motor ha respost", error)
-
-    def test_save_positions_reports_a_file_error(self):
-        handler = FakePacketHandler({1: healthy_servo()})
-
-        record, error = robot_app.save_positions(handler, [1], "/no/such/folder/p.json", "/dev/fake")
-
-        self.assertIsNone(record)
-        self.assertIn("No s'han pogut desar", error)
-
-
 class JointSliderTests(unittest.TestCase):
     def test_default_joint_limits(self):
         self.assertEqual(robot_app.JOINT_LIMITS, {
-            1: (-75, 75), 2: (-75, 60), 3: (-25, 75), 4: (-70, 18), 5: (-75, 75), 6: (-25, 45),
+            servo_id: (-180, 180) for servo_id in range(1, 7)
         })
 
     def test_parse_limits(self):
@@ -218,11 +166,12 @@ class JointSliderTests(unittest.TestCase):
         self.assertEqual(robot_app.parse_degrees("80", 1, limits=(-90, 90)), (80.0, None))
 
     def test_parse_degrees_rejects_text_and_values_outside_the_limits(self):
-        for text, servo_id in (("abc", 1), ("", 2), ("-100", 2), ("46", 6), ("-76", 1), ("20", 4), ("-26", 3)):
+        for text, servo_id in (("abc", 1), ("", 2), ("-181", 2), ("181", 6)):
             degrees, error = robot_app.parse_degrees(text, servo_id)
             self.assertIsNone(degrees, text)
             self.assertIn("valor no vàlid", error)
-        self.assertIn("entre -70 i 18", robot_app.parse_degrees("20", 4)[1])
+        # A narrowed limit is still enforced.
+        self.assertIn("entre -70 i 18", robot_app.parse_degrees("20", 4, limits=(-70, 18))[1])
 
     def test_move_joint_reports_a_servo_that_does_not_answer(self):
         position, error = robot_app.move_joint(FakePacketHandler({}), 6, 10)
@@ -236,17 +185,6 @@ if __name__ == "__main__":
 
 
 class TaskDefinitionTests(unittest.TestCase):
-    def test_the_task_block_shipped_in_the_app_is_valid(self):
-        """The TASCA block is edited by the teams, so only check that it builds and validates."""
-        steps, errors = robot_app.build_task(robot_app.TASCA)
-
-        self.assertEqual(errors, [])
-        self.assertEqual(len(steps), len(robot_app.TASCA))
-        self.assertEqual(robot_app.validate_task(steps), [])
-        for step in steps:
-            self.assertTrue(step.name)
-            self.assertGreater(step.seconds, 0)
-            self.assertTrue(all(isinstance(sid, int) for sid in step.pose))
 
     def test_a_bare_number_moves_only_the_gripper(self):
         steps, errors = robot_app.build_task([("Obrir pinça", -25, 1.0)])
@@ -279,9 +217,10 @@ class TaskDefinitionTests(unittest.TestCase):
             self.assertEqual(len(errors), 1, pose)
             self.assertIn("la posició ha de ser", errors[0])
 
-    def test_validate_task_accepts_the_default_task(self):
-        steps, _ = robot_app.build_task(robot_app.TASCA)
+    def test_validate_task_accepts_the_example_program(self):
+        steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
 
+        self.assertIsNone(error)
         # PINCA_OBERTA and PINCA_TANCADA sit exactly on joint 6's limits.
         self.assertEqual(robot_app.validate_task(steps), [])
 
@@ -311,7 +250,7 @@ class TaskDefinitionTests(unittest.TestCase):
         self.assertIn("no respon", problems[0])
 
     def test_validate_task_reports_an_empty_task(self):
-        self.assertIn("buida", robot_app.validate_task([])[0])
+        self.assertIn("cap programa", robot_app.validate_task([])[0].lower())
 
     def test_task_total_seconds_and_formatting(self):
         steps, _ = robot_app.build_task([("Inici", {1: 0}, 2.0), ("Pinça", 0, 1.5)])
@@ -562,7 +501,7 @@ class TaskPlayerTests(unittest.TestCase):
                 str(self.app.scales[1].cget("state")),
                 str(self.app.entries[1].cget("state")),
                 str(self.app.limit_entries[1][0].cget("state")),
-                str(self.app.save_button.cget("state")),
+                str(self.app.program_run_button.cget("state")),
                 str(self.app.button.cget("state")),
             }
 
@@ -605,7 +544,7 @@ class TaskPlayerTests(unittest.TestCase):
 
 
 class ProgramTests(unittest.TestCase):
-    """The agafar()/deixar() helpers and the sandbox of the program tab."""
+    """The movement helpers and the sandbox of the program tab."""
 
     def names(self, steps):
         return [step.name for step in steps]
@@ -617,25 +556,10 @@ class ProgramTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(robot_app.validate_task(steps), [])
         self.assertGreater(len(steps), 1)
-        # It must open the gripper, close it, and open it again to release.
-        gripper = [step.pose[robot_app.GRIPPER_ID] for step in steps if robot_app.GRIPPER_ID in step.pose]
-        self.assertIn(float(robot_app.PINCA_OBERTA), gripper)
-        self.assertIn(float(robot_app.PINCA_TANCADA), gripper)
-
-    def test_agafar_opens_goes_closes_and_lifts(self):
-        steps, error = robot_app.run_program("agafar(base=10, espatlla=30, colze=15)")
-
-        self.assertIsNone(error)
-        self.assertEqual(self.names(steps), ["Obrir pinça", "Anar a l'objecte", "Tancar pinça", "Aixecar"])
-        self.assertEqual(steps[1].pose, {1: 10.0, 2: 30.0, 3: 15.0})
-        self.assertEqual(steps[0].pose, {robot_app.GRIPPER_ID: float(robot_app.PINCA_OBERTA)})
-        self.assertEqual(steps[2].pose, {robot_app.GRIPPER_ID: float(robot_app.PINCA_TANCADA)})
-
-    def test_deixar_goes_opens_and_lifts(self):
-        steps, _ = robot_app.run_program("deixar(base=40, espatlla=40, colze=20)")
-
-        self.assertEqual(self.names(steps), ["Anar al destí", "Obrir pinça", "Aixecar"])
-        self.assertEqual(steps[0].pose, {1: 40.0, 2: 40.0, 3: 20.0})
+        # It must grip the object and then release it, whatever angles it uses.
+        names = [step.name for step in steps]
+        self.assertLess(names.index(robot_app.TEXTS["program_step_close"]),
+                        names.index(robot_app.TEXTS["program_step_open"]))
 
     def test_a_pose_only_moves_the_joints_the_participant_gave(self):
         steps, _ = robot_app.run_program("anar_a(base=10)")
@@ -660,10 +584,16 @@ class ProgramTests(unittest.TestCase):
         self.assertEqual(steps[0].seconds, 3.0)
 
     def test_a_syntax_error_names_the_line(self):
-        steps, error = robot_app.run_program("inici()\nagafar(base=1")
+        steps, error = robot_app.run_program("inici()\nanar_a(base=1")
 
         self.assertIsNone(steps)
         self.assertIn("línia 2", error)
+
+    def test_the_removed_helpers_are_not_available(self):
+        for code in ("agafar(base=1, espatlla=2, colze=3)", "deixar(base=1, espatlla=2, colze=3)"):
+            steps, error = robot_app.run_program(code)
+            self.assertIsNone(steps, code)
+            self.assertIn("No existeix aquest nom", error)
 
     def test_an_unknown_function_is_reported(self):
         steps, error = robot_app.run_program("agafarr(base=1)")
@@ -672,7 +602,7 @@ class ProgramTests(unittest.TestCase):
         self.assertIn("No existeix aquest nom", error)
 
     def test_a_coordinate_that_is_not_a_number_is_reported(self):
-        _, error = robot_app.run_program("agafar(base='endavant')")
+        _, error = robot_app.run_program("anar_a(base='endavant')")
 
         self.assertIn("Base", error)
         self.assertIn("ha de ser un número", error)
@@ -784,7 +714,7 @@ class MotionParameterTests(unittest.TestCase):
         self.assertEqual(handler.servos[1]["goal"][1:], (400, 25))
 
     def test_the_defaults_are_inside_the_range_the_app_accepts(self):
-        self.assertEqual((robot_app.SAFE_SPEED, robot_app.SAFE_ACC), (300, 15))
+        self.assertEqual((robot_app.SAFE_SPEED, robot_app.SAFE_ACC), (750, 50))
         self.assertGreaterEqual(robot_app.SAFE_SPEED, robot_app.SPEED_MIN)
 
 
@@ -890,75 +820,223 @@ class TaskStepModeTests(unittest.TestCase):
 
     def test_the_step_button_is_usable_while_paused_and_not_while_playing(self):
         self.app.on_play()
-        self.assertEqual(str(self.app.step_button.cget("state")), "disabled")
+        self.assertEqual(str(self.app.program_step_button.cget("state")), "disabled")
         self.app.on_pause()
-        self.assertEqual(str(self.app.step_button.cget("state")), "normal")
         self.assertEqual(str(self.app.program_step_button.cget("state")), "normal")
 
 
-class LoadPositionsTests(unittest.TestCase):
-    def _write(self, tmp, record):
-        path = os.path.join(tmp, "p.json")
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(record, handle)
-        return path
+class AnarALineTests(unittest.TestCase):
+    def test_a_line_names_every_arm_joint(self):
+        line = robot_app.anar_a_line({1: -7.2, 2: 30.0, 3: 17.4, 4: 0.0, 5: 0.0})
 
-    def test_a_file_written_by_save_positions_round_trips_exactly(self):
-        handler = FakePacketHandler({1: healthy_servo(2114), 3: healthy_servo(1742), 6: healthy_servo(2560)})
+        self.assertEqual(line, "anar_a(base=-7, espatlla=30, colze=17, canell=0, gir=0)")
 
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "p.json")
-            record, _ = robot_app.save_positions(handler, [1, 3, 6], path, "/dev/fake")
-            pose, error = robot_app.load_positions(path)
+    def test_the_line_is_valid_python_the_program_accepts(self):
+        line = robot_app.anar_a_line({1: 10.0, 2: 20.0, 3: 5.0, 4: 1.0, 5: 2.0})
+
+        steps, error = robot_app.run_program(line)
 
         self.assertIsNone(error)
-        # Reloading the degrees must command the raw positions that were saved.
-        for key, entry in record["servos"].items():
-            servo_id = int(key)
-            self.assertEqual(
-                robot_app.degrees_to_position(pose[servo_id], robot_app.is_inverted(servo_id)),
-                entry["position"],
-                entry["joint"],
-            )
+        self.assertEqual(steps[0].pose, {1: 10.0, 2: 20.0, 3: 5.0, 4: 1.0, 5: 2.0})
 
-    def test_the_saved_zero_pose_loads_as_the_degrees_it_holds(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = self._write(tmp, {"servos": {
-                "1": {"joint": "Base", "degrees": 0.1, "position": 2049},
-                "2": {"joint": "Espatlla", "degrees": 0.9, "position": 2058},
-            }})
-            pose, error = robot_app.load_positions(path)
+    def test_joints_that_are_missing_are_left_out(self):
+        self.assertEqual(robot_app.anar_a_line({1: 5.0, 3: 9.0}), "anar_a(base=5, colze=9)")
+
+    def test_there_is_no_negative_zero(self):
+        self.assertEqual(robot_app.anar_a_line({4: -0.2}), "anar_a(canell=0)")
+
+
+class HomePoseTests(unittest.TestCase):
+    def test_inici_goes_to_the_default_home_when_none_is_given(self):
+        steps, _ = robot_app.run_program("inici()")
+
+        self.assertEqual(steps[0].pose, dict(robot_app.POSICIO_ZERO))
+
+    def test_inici_goes_to_the_saved_home_pose(self):
+        home = {1: 2.6, 2: 5.3, 3: -7.9, 4: 10.5, 5: 13.2}
+
+        steps, error = robot_app.run_program("inici()", home=home)
 
         self.assertIsNone(error)
-        self.assertEqual(pose, {1: 0.1, 2: 0.9})
+        self.assertEqual(steps[0].pose, home)
 
-    def test_a_missing_file_is_reported(self):
-        pose, error = robot_app.load_positions("/no/such/file.json")
+    def test_the_home_pose_is_copied_not_shared(self):
+        home = {1: 0.0}
+        builder = robot_app.TaskBuilder(home=home)
+        builder.home[1] = 99.0
 
-        self.assertIsNone(pose)
-        self.assertIn("No s'ha pogut llegir", error)
+        self.assertEqual(home, {1: 0.0})
 
-    def test_a_file_that_is_not_json_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "p.json")
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write("no json at all")
-            pose, error = robot_app.load_positions(path)
+    def test_the_gripper_values_are_available_to_the_program(self):
+        steps, error = robot_app.run_program("anar_a(base=PINCA_OBERTA)")
 
-        self.assertIsNone(pose)
-        self.assertIn("No s'ha pogut llegir", error)
+        self.assertIsNone(error)
+        self.assertEqual(steps[0].pose, {1: float(robot_app.PINCA_OBERTA)})
 
-    def test_a_file_without_servos_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            for record in ({"servos": {}}, {"port": "/dev/fake"}, []):
-                pose, error = robot_app.load_positions(self._write(tmp, record))
-                self.assertIsNone(pose, record)
-                self.assertIsNotNone(error)
 
-    def test_an_entry_without_usable_degrees_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = self._write(tmp, {"servos": {"1": {"joint": "Base", "position": 2049}}})
-            pose, error = robot_app.load_positions(path)
+class GripperAngleTests(unittest.TestCase):
+    def test_the_default_angles_are_still_used(self):
+        steps, error = robot_app.run_program("obrir_pinca()\ntancar_pinca()")
 
-        self.assertIsNone(pose)
-        self.assertIn("graus vàlids", error)
+        self.assertIsNone(error)
+        self.assertEqual(steps[0].pose, {robot_app.GRIPPER_ID: float(robot_app.PINCA_OBERTA)})
+        self.assertEqual(steps[1].pose, {robot_app.GRIPPER_ID: float(robot_app.PINCA_TANCADA)})
+
+    def test_an_angle_can_be_given(self):
+        steps, error = robot_app.run_program("obrir_pinca(30)\ntancar_pinca(graus=-20)")
+
+        self.assertIsNone(error)
+        self.assertEqual(steps[0].pose, {robot_app.GRIPPER_ID: 30.0})
+        self.assertEqual(steps[1].pose, {robot_app.GRIPPER_ID: -20.0})
+
+    def test_the_duration_can_still_be_overridden(self):
+        steps, _ = robot_app.run_program("obrir_pinca(10, segons=3)")
+
+        self.assertEqual(steps[0].seconds, 3.0)
+
+    def test_an_angle_that_is_not_a_number_is_reported(self):
+        steps, error = robot_app.run_program("obrir_pinca('molt')")
+
+        self.assertIsNone(steps)
+        self.assertIn("Pinça", error)
+        self.assertIn("ha de ser un número", error)
+
+    def test_the_gripper_angle_is_checked_against_its_limits(self):
+        steps, _ = robot_app.run_program("obrir_pinca(200)")
+
+        problems = robot_app.validate_task(steps, limits={robot_app.GRIPPER_ID: (-25, 45)})
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("Pinça", problems[0])
+
+
+class DefaultProgramTests(unittest.TestCase):
+    def test_the_default_program_runs_and_validates(self):
+        steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
+
+        self.assertIsNone(error)
+        self.assertEqual(len(steps), len([
+            line for line in robot_app.PROGRAMA_EXEMPLE.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]))
+        self.assertEqual(robot_app.validate_task(steps), [])
+
+    def test_it_starts_at_home_and_grips_before_releasing(self):
+        steps, _ = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
+        names = [step.name for step in steps]
+
+        self.assertEqual(names[0], TEXTS_HOME := robot_app.TEXTS["program_step_home"])
+        self.assertLess(names.index(robot_app.TEXTS["program_step_close"]),
+                        names.index(robot_app.TEXTS["program_step_open"]))
+
+
+class StepDurationTests(unittest.TestCase):
+    def test_parse_durations_accepts_values_in_range(self):
+        self.assertEqual(robot_app.parse_durations("1,5", "2.5"), ((1.5, 2.5), None))
+        self.assertEqual(robot_app.parse_durations(str(robot_app.SECONDS_MIN), "60"),
+                         ((robot_app.SECONDS_MIN, 60.0), None))
+
+    def test_parse_durations_rejects_text_and_values_out_of_range(self):
+        for move, gripper in (("abc", "2"), ("", "2"), ("0", "2"), ("2", "0"), ("61", "2"), ("2", "-1")):
+            values, error = robot_app.parse_durations(move, gripper)
+            self.assertIsNone(values, (move, gripper))
+            self.assertIn("esperes han de ser", error)
+
+    def test_a_program_uses_the_durations_it_is_given(self):
+        steps, error = robot_app.run_program(
+            "inici()\nobrir_pinca()\ntancar_pinca()\nanar_a(base=5)\naixecar()",
+            move_seconds=1.5, gripper_seconds=2.5,
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual([step.seconds for step in steps], [1.5, 2.5, 2.5, 1.5, 1.5])
+
+    def test_the_defaults_are_used_when_none_are_given(self):
+        steps, _ = robot_app.run_program("inici()\nobrir_pinca()")
+
+        self.assertEqual([step.seconds for step in steps],
+                         [robot_app.MOVE_SECONDS, robot_app.GRIPPER_SECONDS])
+
+    def test_a_segons_argument_still_wins_over_the_setting(self):
+        steps, _ = robot_app.run_program("anar_a(base=5, segons=9)", move_seconds=1.5)
+
+        self.assertEqual(steps[0].seconds, 9.0)
+
+    def test_esperar_keeps_its_own_duration(self):
+        steps, _ = robot_app.run_program("esperar(0.5)", move_seconds=1.5, gripper_seconds=2.5)
+
+        self.assertEqual(steps[0].seconds, 0.5)
+
+
+class LogoTests(unittest.TestCase):
+    def test_the_logo_png_ships_with_the_app(self):
+        self.assertTrue(robot_app.LOGO_PATH.exists(), robot_app.LOGO_PATH)
+        self.assertEqual(robot_app.LOGO_PATH.suffix, ".png")  # Tk reads PNG, not SVG
+
+    def test_a_missing_logo_is_not_an_error(self):
+        self.assertIsNone(robot_app.load_logo(path="/no/such/logo.png"))
+
+
+class ThemeTests(unittest.TestCase):
+    def test_the_palette_uses_the_logo_colours(self):
+        self.assertEqual(robot_app.CYAN.upper(), "#6CDAE7")
+        self.assertEqual(robot_app.TEAL.upper(), "#008B8B")
+
+    @unittest.skipUnless(HAS_DISPLAY, "no usable display for Tk")
+    def test_the_rounded_button_element_is_installed(self):
+        root = robot_app.tk.Tk()
+        root.withdraw()
+        try:
+            style = robot_app.apply_dark_theme(root)
+            images = robot_app.rounded_button_style(style, root)
+            if not images:
+                self.skipTest("Pillow not available")
+            self.assertIn("Rounded.button", style.element_names())
+            self.assertEqual(style.layout("TButton")[0][0], "Rounded.button")
+            # The transparent corners flatten against this, so it must be the
+            # container colour, not the button colour.
+            self.assertEqual(style.lookup("TButton", "background"), robot_app.BG)
+            self.assertEqual(style.lookup("Panel.TButton", "background"), robot_app.PANEL_BG)
+        finally:
+            root.destroy()
+
+    def test_rounded_corners_are_transparent(self):
+        if robot_app.Image is None:
+            self.skipTest("Pillow not available")
+        from PIL import Image as PILImage
+        import io as _io
+        png = robot_app._rounded_png(robot_app.TEAL)
+        image = PILImage.open(_io.BytesIO(png))
+        self.assertEqual(image.getpixel((0, 0))[3], 0)          # corner see-through
+        self.assertEqual(image.getpixel((9, 9))[:3], (0, 139, 139))  # middle is teal
+
+
+class RoundedTabTests(unittest.TestCase):
+    def test_only_the_top_corners_are_rounded(self):
+        if robot_app.Image is None:
+            self.skipTest("Pillow not available")
+        from PIL import Image as PILImage
+        import io as _io
+        radius = robot_app.BUTTON_RADIUS
+        size = (2 * radius + 4, 2 * radius + 8)
+        png = robot_app._rounded_png(robot_app.TEAL, radius, size, corners=(True, True, False, False))
+        image = PILImage.open(_io.BytesIO(png))
+
+        self.assertEqual(image.getpixel((0, 0))[3], 0)                       # top left cut away
+        self.assertEqual(image.getpixel((size[0] - 1, 0))[3], 0)             # top right too
+        self.assertEqual(image.getpixel((0, size[1] - 1))[3], 255)           # bottom left square
+        self.assertEqual(image.getpixel((size[0] - 1, size[1] - 1))[3], 255)
+
+    @unittest.skipUnless(HAS_DISPLAY, "no usable display for Tk")
+    def test_the_tab_element_is_installed(self):
+        root = robot_app.tk.Tk()
+        root.withdraw()
+        try:
+            style = robot_app.apply_dark_theme(root)
+            images = robot_app.rounded_tab_style(style, root)
+            if not images:
+                self.skipTest("Pillow not available")
+            self.assertEqual(len(images), 3)  # normal, selected, hover
+            self.assertEqual(style.layout("TNotebook.Tab")[0][0], "Rounded.tab")
+        finally:
+            root.destroy()

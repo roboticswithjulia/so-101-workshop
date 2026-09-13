@@ -14,8 +14,8 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 
 ## Included features
 
-- desktop app (Python and Tkinter, Catalan interface) with two tabs: joint sliders plus a zero-pose button, and a code editor where teams complete the coordinates of ready-made `agafar()` / `deixar()` functions
-- a task player with Play, Pause and Stop that runs either the task block or the team's program
+- desktop app (Python and Tkinter, Catalan interface) with two tabs: joint sliders with the live angle of each servo, and a code editor where teams complete the coordinates of ready-made movement functions
+- a task player with Executar, Pas a pas, Pausa and Aturar that runs the team's program
 - command line tools to find the servos, check their configuration and watch their positions
 - a real robot adapter and a simulated robot with the same interface, ready for a future workshop UI
 - all servo communication through the official Feetech SDK
@@ -24,7 +24,7 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 ## Project structure
 
 - `app/` – desktop application
-  - `app/app.py` – the whole app: joint sliders, zero pose, task player and the program tab; the default task is the `TASCA` block at the top of the file
+  - `app/app.py` – the whole app: Control tab with the joint sliders, and Programa tab where the task is written and run
 - `src/` – source code: robot logic and servo tools
   - `src/robot_controller.py` – safe controller logic (used by the tests and by a future workshop UI)
   - `src/mock_robot.py` – simulated robot with the same interface as the real one
@@ -36,6 +36,7 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
   - `src/servo_config.py` – read and check the configuration of each servo
   - `src/servo_positions.py` – show the current position of each joint
   - `src/servo_wiring.py` – wiring and safety diagram
+- `logo/` – the JMRobotics logo: `Logo_JMR.svg` is the source, `Logo_JMR.png` is what the app shows
 - `tests/` – validation tests
 - `docs/` – documentation: `FTSERVO_SDK.md` (Feetech SDK reference), `context.md` (workshop context) and the workshop proposal PDF
 
@@ -76,22 +77,22 @@ The `--system-site-packages` flag keeps the system Tkinter visible inside the vi
 
 ## Run the app
 
-A Catalan window for instructors. It connects to the arm when it opens (or with the "Connectar" button), holds every servo where it is and enables its torque.
+A Catalan window for instructors, on a dark grey background with the two colours of the JMRobotics logo as the accent: `#6CDAE7` for the sliders, headings and focus, and `#008B8B` for the troughs, borders and buttons. The program editor is light grey with dark text, since that is where you read and edit at length, and the log box below the status line is dark grey, one step lighter than the window. Buttons, joint names, panel titles and field labels are bold, and the buttons have rounded corners. The palette is the block of constants at the top of `app/app.py`, and `apply_dark_theme()` builds the ttk style from it. ttk has no border radius, so the buttons are drawn from a rounded image that Tk stretches; that needs Pillow, and without it the buttons are simply square. It connects to the arm when it opens (or with the "Connectar" button), holds every servo where it is and enables its torque.
 
 **Joint sliders.** One slider per joint moves that servo as an offset in degrees from the zero pose:
 
 | ID | Joint (Catalan) | Limits [min, max] | Direction |
 |----|-----------------|-------------------|-----------|
-| 1 | Base | -75° to +75° | normal |
-| 2 | Espatlla | -75° to +60° | normal |
-| 3 | Colze | -25° to +75° | inverted (value × -1) |
-| 4 | Canell | -70° to +18° | normal |
-| 5 | Gir del canell | -75° to +75° | normal |
-| 6 | Pinça | -25° to +45° | normal |
+| 1 | Base | -180° to +180° | normal |
+| 2 | Espatlla | -180° to +180° | normal |
+| 3 | Colze | -180° to +180° | inverted (value × -1) |
+| 4 | Canell | -180° to +180° | normal |
+| 5 | Gir del canell | -180° to +180° | normal |
+| 6 | Pinça | -180° to +180° | normal |
 
-Each slider runs between the limits of its joint. To the right of each slider there are three boxes: the target position in degrees (type a value such as `45` or `-12.5` and press Enter and the joint moves there; a value outside the limits is refused), and the minimum and maximum limits (type a new value and press Enter: the slider is rescaled and later moves are clamped to the new limits). The defaults are the table above. The last column of the `JOINTS` table in `app/app.py` sets the direction of each joint (+1 normal, -1 inverted); Colze is inverted. "Tornar tot a zero" moves every joint back to the zero pose. "Desar posicions" asks for a file and writes the current position of every servo to it as JSON: raw position, degrees from the zero pose, whether the joint is inverted, and its limits, plus the port and a timestamp. A move is sent when the slider is released (one smooth motion at about 9 rpm). The ranges are the `JOINTS` table and the speed the `SAFE_SPEED` / `SAFE_ACC` constants at the top of `app/app.py`; if a joint judders, raise the speed, and if it moves too fast, lower it.
+> The defaults span the whole travel the servo can reach, so they stop nothing. Narrow the min and max of a joint, in the app or in the `JOINTS` table, to keep it off its mechanical stops.
 
-**Zero pose.** Put the arm in its neutral pose with the gripper open, press "Fixar la posició actual com a zero", confirm with "Sí", and every servo stores its current position as its zero (2048). The result per servo is shown in the window and the sliders reset to 0°.
+Each slider runs between the limits of its joint, and the direction comes from the last column of the `JOINTS` table in `app/app.py` (+1 normal, -1 inverted); Colze is inverted. A move is sent when the slider is released, as one smooth motion. See the Control tab section below for what each column does.
 
 From the project folder:
 
@@ -102,89 +103,64 @@ python3 app/app.py --port /dev/ttyUSB0 --ids 1,2,3
 
 If the app reports "permís denegat" on the serial port, your user must be in the `dialout` group. Run `sudo usermod -aG dialout $USER` once, then **log out and log back in** (or reboot). The new group only applies to sessions started after the change, so a terminal or VS Code window that was already open keeps failing. To run once without logging out: `sg dialout -c "python3 app/app.py"`.
 
-### Pick-and-place task
+### Control tab
 
-The workshop challenge, picking an object at a start position and placing it at an end position, is programmed by editing one block at the top of `app/app.py`, marked `# ===== TASCA: EDITA AQUÍ =====`. Teams change four poses (`POSICIO_ZERO`, `POSICIO_AGAFAR`, `POSICIO_INTERMITJA`, `POSICIO_DEIXAR`), the two gripper values (`PINCA_OBERTA`, `PINCA_TANCADA`) and the list of steps in `TASCA`:
+The top row has three buttons of the same size, **Connectar**, **Fixar la posició zero** and **Tornar tot a zero**, and the **Motors lliures** check box.
 
-```python
-POSICIO_AGAFAR = {1: 5, 2: 43, 3: 27, 4: 0, 5: 0}
+Each joint has a slider between its limits, the **live angle the servo actually reports**, a box to type a target angle, and its min and max limits. The live angle is re-read from the arm several times a second, so it stays right even while the motors are free and you are posing the arm by hand, which is exactly when the sliders cannot know where the arm is.
 
-TASCA = [
-    ("Inici",             POSICIO_ZERO,       2.0),
-    ("Obrir pinça",       PINCA_OBERTA,       1.0),
-    ("Anar a l'objecte",  POSICIO_AGAFAR,     2.5),
-    ("Tancar pinça",      PINCA_TANCADA,      1.0),
-    ("Aixecar l'objecte", POSICIO_INTERMITJA, 2.5),
-    ("Anar al destí",     POSICIO_DEIXAR,     2.5),
-    ("Obrir pinça",       PINCA_OBERTA,       1.0),
-    ("Tornar a l'inici",  POSICIO_ZERO,       2.0),
-]
-```
+**Moviment** holds the speed and acceleration used by every move. Speed is in encoder steps per second and acceleration in units of 100 steps/s². The defaults are 750 and 50, so a 90° move takes about 1.5 seconds. A higher speed and a steeper ramp draw more current: if the servos start tripping their overload protection, or `src/servo_config.py` shows the supply voltage sagging below 7 V under load, lower both. Below 100 steps/s the servo creeps and judders, so that is the accepted minimum. Type the two values and press **Aplicar**, or Enter in either box; the status line then reports how long a 90° move will take.
 
-`POSICIO_INTERMITJA` is the lift-and-carry pose between picking and placing: the arm raised with the object held, high enough not to drag it across the table. Capture it with the object in the gripper.
+The second row of the panel holds the **step durations**: how long the program waits after a move and after a gripper step, before starting the next line. There is no feedback from the servos, so a step must outlast the move it starts, but a wait longer than the move is dead time. If the arm visibly stops between moves, lower **Espera moviment**; if the gripper is still moving when the next line begins, raise **Espera pinça**. Both default to 1 s, which at the default speed covers a move of about 50°. A `segons=` argument on a line always wins over these.
 
-A pose is `{servo id: degrees from the zero pose}`, and a joint left out of a pose stays where it is. A step is `("name", pose, seconds)`, and the pose may be a bare number, which moves the gripper (servo 6) only, so an arm move never reopens the gripper and drops the object. Restart the app after editing the block.
+**Motors lliures** turns the torque off on every servo so the arm can be posed by hand. It asks for confirmation first, because the arm drops under its own weight the moment the torque goes: hold it, and take any object out of the gripper. While the motors are free the sliders are disabled, since a goal position is stored but not obeyed. Unticking the box commands every servo the position it is currently in and only then restores the torque, so the arm holds where your hand left it instead of jumping back. Starting a program re-enables the torque automatically.
 
-The "Tasca: agafar i deixar un objecte" panel has three buttons:
+**Fixar la posició zero** stores the current pose of every servo as its zero (2048). It is written to the motor memory and replaces the previous zero, which invalidates every coordinate already written in a program, so capture the poses again after using it.
 
-- **Executar** validates the whole task first. A pose outside the current limits of a joint is reported in Catalan and nothing moves, so a wrong number is never silently clamped. It then runs the steps in order, waiting the fixed number of seconds each step declares. There is no feedback from the servos, so give a step enough time for the arm to arrive: about 2 s for a 90° move at the default speed.
-- **Pas a pas** runs one step and stops there, reporting which step just finished and which comes next. Press it again for the following step, or Executar to run the rest without stopping. It is the button to use while teaching: the class sees exactly what each line of the program does. After the last step it rewinds, so pressing it again starts the task from the beginning.
-- **Pausa** freezes the arm where it is and remembers the step. Pressing Executar again re-sends that step from its beginning with its full duration.
-- **Aturar** freezes the arm and rewinds to the first step. It is live at all times, so it doubles as a hold button.
+### Programa tab
 
-Freezing commands every servo the position it currently reads, with the torque left on, so the arm never goes limp. While a task is playing or paused the joint sliders, the limit boxes and the zero and save buttons are disabled, so nothing else writes to the servo bus.
-
-**Moviment** holds the speed and acceleration used by every move: the sliders, the task and the program. Speed is in encoder steps per second and acceleration in units of 100 steps/s². The defaults are 300 and 15, so a 90° move takes about 3.6 seconds. A higher speed and a steeper ramp draw more current: if the servos start tripping their overload protection, or `src/servo_config.py` shows the supply voltage sagging below 7 V under load, halve both values. Type a value and press Enter; the status line reports how long a 90° move will then take. Below 100 steps/s the servo creeps and judders instead of turning smoothly, so that is the accepted minimum. If a task step ends before the arm arrives, either give the step more seconds or raise the speed.
-
-**Carregar posicions** reads a file written by "Desar posicions" and moves the arm to the pose it holds. It lists the angles and asks for confirmation before moving, and refuses if any of them falls outside the joint's current limits, so a file saved with different limits cannot drive a joint past them. The two files in `config/` are a neutral pose and a pose reaching a block, captured during setup. The file stores both the raw position and the angle, and the angle is what gets replayed, so it goes through the same limit and direction handling as every other move and lands on the same step it was saved at.
-
-**Motors lliures** is a check box in the top row that turns the torque off on every servo, so the arm can be posed by hand. It asks for confirmation first, because the arm drops under its own weight the moment the torque goes: hold it, and take any object out of the gripper. While the motors are free the joint sliders are disabled, since a goal position is stored but not obeyed. Unticking the box commands every servo the position it is currently in and only then restores the torque, so the arm holds where your hand left it instead of jumping back. Starting a task or a program re-enables the torque automatically.
-
-**Copiar la posició actual** reads the arm and prints a ready-to-paste Python literal such as `{1: 6, 2: 44, 3: 27, 4: 0, 5: 0}` in the log box, and copies it to the clipboard. Move the arm by hand or with the sliders to the pick or place pose, press the button, and paste the line into `POSICIO_AGAFAR` or `POSICIO_DEIXAR`. The gripper is reported on its own line, for `PINCA_OBERTA` and `PINCA_TANCADA`. The numbers match the `degrees` field written by "Desar posicions", so `config/positions_block.json` can also be used as a source.
-
-> Pressing "Fixar la posició actual com a zero" moves the zero pose, which invalidates every number in `TASCA`. Capture the poses again after re-zeroing.
-
-### Programming tab
-
-The "Programa" tab is the Repte 1 template from the workshop proposal: the functions are written already and teams only complete the coordinates. The editor opens with an example and the code can be edited, saved and loaded from inside the app.
+This is where the task is written and run. The editor opens with the Repte 1 template: the functions are written already and teams only complete the coordinates.
 
 ```python
-obrir_pinca()
 inici()
+anar_a(base=-3, espatlla=48, colze=14, canell=-25, gir=-6)
+tancar_pinca(-40)
+esperar(0.5)
 
-# Baixar a l'objecte i agafar-lo
-anar_a(base=-7, espatlla=30, colze=17)
-tancar_pinca()
+anar_a(base=-3, espatlla=27, colze=15, canell=-7, gir=-6)
+anar_a(base=14, espatlla=22, colze=14, canell=-3, gir=-6)
 
-# Aixecar, girar cap al destí i baixar
-anar_a(base=-7, espatlla=17, colze=15)
-anar_a(base=49, espatlla=17, colze=15)
-anar_a(base=49, espatlla=29, colze=15)
+anar_a(base=32, espatlla=66, colze=45, canell=-16, gir=-6)
+obrir_pinca(10)
 
-# Deixar l'objecte i retirar-se
-obrir_pinca()
-anar_a(base=49, espatlla=17, colze=15)
+anar_a(base=31, espatlla=36, colze=18, canell=-16, gir=-6)
 
 inici()
 ```
-
-Available functions, all taking degrees relative to the zero pose:
 
 | Function | What it does |
 |---|---|
-| `agafar(base, espatlla, colze)` | opens the gripper, moves to the object, closes the gripper and lifts |
-| `deixar(base, espatlla, colze)` | moves to the destination, opens the gripper and lifts |
-| `anar_a(base, espatlla, colze)` | moves the arm only |
-| `obrir_pinca()` / `tancar_pinca()` | moves the gripper only |
+| `anar_a(base, espatlla, colze, canell, gir)` | moves the arm; any joint left out stays where it is |
+| `obrir_pinca(graus)` / `tancar_pinca(graus)` | moves the gripper; without an angle it uses the default open and closed values |
 | `aixecar()` | goes to the intermediate carry pose |
-| `inici()` | returns to the zero pose |
+| `inici()` | goes to the home position |
 | `esperar(segons)` | waits without moving |
 
-All of them also accept `canell=` and `gir=`, and a `segons=` to override the default duration. Joints that are not named stay where they are. `for` loops work, which is what the second challenge needs.
+All of them accept `segons=` to override the default duration, and `for` loops work. Every move is written out step by step, so a team can see the whole sequence in the editor with nothing hidden inside a helper.
 
-**Executar el programa** compiles the code, turns it into the same kind of step list as the `TASCA` block and plays it with the same Pas a pas, Pause and Stop buttons. The **Pas a pas** button on this tab compiles the program and runs it one step at a time, which is the quickest way for a team to see which line moves which joint. Nothing reaches the servos until the whole program has been read and validated, so a mistake stops before the arm moves. Errors are reported in Catalan with the line number for a syntax error, and the name for an unknown function. A program is capped at 200 steps, so a runaway `while True` is caught rather than run. The code runs with a restricted set of builtins: imports, `open` and `eval` are not reachable.
+**Afegir la posició actual** reads the arm and writes an `anar_a(base=…, espatlla=…, colze=…, canell=…, gir=…)` line straight into the editor, below the cursor. Tick **Motors lliures** on the Control tab, move the arm by hand to where you want it, press the button, and the line appears with all five joints filled in. This is the fastest way for a team to build a sequence.
 
-**Desar** and **Carregar** write and read the program as a `.py` file, so an instructor can prepare one file per team, and **Exemple** restores the starting template. While a program runs, the editor and its buttons are disabled.
+**Desar posició inici** takes the current pose as the start position, so every later `inici()` goes there instead of to the zero pose.
+
+**Executar el programa** compiles the code, turns it into a step list and plays it. The whole task is validated before the first servo moves, so a pose outside a joint's current limits is reported in Catalan and nothing moves. Timing is open loop: each step waits a fixed number of seconds, so give a move enough time to finish, about 2.5 seconds at the default speed.
+
+- **Pas a pas** runs one step and stops there, reporting what finished and what comes next. It is the button to use while teaching. After the last step it rewinds.
+- **Pausa** freezes the arm where it is and remembers the step; Executar resumes that step from its beginning.
+- **Aturar** freezes the arm and rewinds to the first step. It is live at all times, so it doubles as a hold button.
+
+Freezing commands every servo the position it currently reads, with the torque left on, so the arm never goes limp. While a program runs, the editor, the sliders and the other buttons are disabled.
+
+Errors are reported in Catalan: a syntax error gives the line number, an unknown function gives the name. A program is capped at 200 steps, so a runaway `while True` is caught rather than run, and the code runs with a restricted set of builtins, so imports, `open` and `eval` are unreachable. **Desar** and **Carregar** write and read the program as a `.py` file, and **Exemple** restores the template.
 
 ## Run the tests
 
@@ -397,7 +373,7 @@ This is the recommended live workflow before any broader arm movement.
 
 ### App reports an error
 
-- "fora dels límits": a pose in the `TASCA` block is outside that joint's min/max. Change the pose, or widen the limit in the joint panel.
+- "fora dels límits": a coordinate in the program is outside that joint's min/max. Change the coordinate, or widen the limit on the Control tab.
 - "permís denegat": add your user to `dialout` and log out and back in (see "Run the app")
 - "Cap motor ha respost": check the 7.4V supply, the cable chain and the servo IDs with `src/servo_scan.py`
 - "NO aplicat" on a servo: the servo ignored the zero command; check its firmware or use the Feetech tool

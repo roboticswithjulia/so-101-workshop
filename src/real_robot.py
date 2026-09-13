@@ -22,9 +22,9 @@ class RealRobotAdapter:
     # Offset from the gripper zero (recorded open) to the closed position.
     GRIPPER_CLOSE_STEPS = 500
     # STS3215 units: speed in encoder steps per second (50 steps/s = 0.732 rpm),
-    # acceleration in units of 100 steps/s^2. About 4.4 rpm: gentle but brisk.
-    SAFE_SPEED = 300
-    SAFE_ACC = 15
+    # acceleration in units of 100 steps/s^2. About 11 rpm.
+    SAFE_SPEED = 750
+    SAFE_ACC = 50
 
     def __init__(self, port=None, baudrate=DEFAULT_BAUDRATE):
         self.position = {"x": 0, "y": 0, "z": 0}
