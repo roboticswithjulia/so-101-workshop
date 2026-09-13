@@ -156,7 +156,9 @@ GRIPPER_SECONDS = 1.0
 BG = "#2B2B2B"          # window background, dark grey
 PANEL_BG = "#333333"    # frames and label frames
 FIELD_BG = "#1F1F1F"    # entry and text boxes, darker than the panels
-TAB_BG = "#1A1A1A"      # the selected tab: darker than everything around it
+TAB_BG = "#1A1A1A"      # unselected tabs: almost black
+TEXT_BG = "#D9D9D9"     # the program editor and the log: light grey
+TEXT_FG = "#1A1A1A"     # dark text on that light grey
 FG = "#E6E6E6"          # normal text
 MUTED_FG = "#8C8C8C"    # hints and disabled text
 CYAN = "#6CDAE7"        # logo light cyan: sliders, headings, focus
@@ -875,21 +877,24 @@ def apply_dark_theme(root):
     style.configure("Title.TLabel", background=BG, foreground=CYAN)
     style.configure("Status.TLabel", background=BG, foreground=CYAN)
     style.configure("TNotebook", background=BG, bordercolor=TEAL)
-    # Inverted on purpose: the tab you are on is dark, the ones you can go to are
-    # the logo teal.
-    style.configure("TNotebook.Tab", background=TEAL, foreground=BG, padding=(14, 6))
+    # The tab you are on is the logo teal; the ones you can switch to are black.
+    style.configure("TNotebook.Tab", background=TAB_BG, foreground=MUTED_FG, padding=(14, 6))
     style.map("TNotebook.Tab",
-              background=[("selected", TAB_BG), ("active", CYAN)],
-              foreground=[("selected", CYAN), ("active", BG)])
+              background=[("selected", TEAL), ("active", CYAN)],
+              foreground=[("selected", "#FFFFFF"), ("active", BG)])
     style.configure("TScrollbar", background=TEAL, troughcolor=FIELD_BG, bordercolor=BG,
                     arrowcolor=FG)
     return style
 
 
 def style_text(widget):
-    """Colours for a plain tk.Text, which ttk styles do not reach."""
-    widget.configure(bg=FIELD_BG, fg=FG, insertbackground=CYAN,
-                     selectbackground=TEAL, selectforeground=FG,
+    """Colours for a plain tk.Text, which ttk styles do not reach.
+
+    These two boxes hold a lot of text to read and edit, so they are light grey
+    with dark text rather than dark like the rest of the window.
+    """
+    widget.configure(bg=TEXT_BG, fg=TEXT_FG, insertbackground=TEAL,
+                     selectbackground=TEAL, selectforeground="#FFFFFF",
                      highlightthickness=1, highlightbackground=TEAL, highlightcolor=CYAN,
                      borderwidth=0)
 
