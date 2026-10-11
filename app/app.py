@@ -27,6 +27,9 @@ import argparse
 import base64
 import io
 import json
+import re
+import shutil
+import subprocess
 from collections import namedtuple
 from datetime import datetime
 
@@ -67,10 +70,11 @@ POSICIO_INTERMITJA = {1: 21, 2: 15, 3: 10, 4: 0, 5: 0}
 PINCA_OBERTA, PINCA_TANCADA = 13, -13
 
 
-# Programa d'exemple de la pestanya "Programa". Els participants només han de
-# completar les coordenades; les funcions de moviment ja estan fetes.
+# Programa d'exemple de la pestanya "Programa": només els comentaris, perquè
+# cada equip escrigui el seu programa des de zero.
 PROGRAMA_EXEMPLE = """# Repte 1: agafa l'objecte i deixa'l a l'altra posició.
-# Només has d'ajustar les coordenades (graus respecte de la posició zero).
+# Escriu el teu programa a sota. Les coordenades són graus respecte de la
+# posició zero.
 #
 # Per posar-hi una posició: mou el braç fins on el vulguis (pots marcar
 # «Motors lliures» a la pestanya Control i moure'l a mà) i prem
@@ -86,20 +90,6 @@ PROGRAMA_EXEMPLE = """# Repte 1: agafa l'objecte i deixa'l a l'altra posició.
 # Les articulacions que no escriguis es queden on són, i totes les funcions
 # accepten segons= per canviar quant s'espera abans del pas següent.
 
-inici()
-anar_a(base=-3, espatlla=48, colze=14, canell=-25, gir=-6)
-tancar_pinca(-40)
-esperar(0.5)
-
-anar_a(base=-3, espatlla=27, colze=15, canell=-7, gir=-6)
-anar_a(base=14, espatlla=22, colze=14, canell=-3, gir=-6)
-
-anar_a(base=32, espatlla=66, colze=45, canell=-16, gir=-6)
-obrir_pinca(10)
-
-anar_a(base=31, espatlla=36, colze=18, canell=-16, gir=-6)
-
-inici()
 """
 
 # (servo id, Catalan name, minimum degrees, maximum degrees, direction) relative
@@ -178,6 +168,24 @@ TEAL = "#008B8B"        # logo dark cyan: troughs, borders, pressed buttons
 #   inkscape --export-type=png --export-filename=Logo_JMR.png \
 #            --export-area-drawing --export-height=72 logo/Logo_JMR.svg
 LOGO_PATH = Path(__file__).resolve().parents[1] / "logo" / "Logo_JMR.png"
+# The Guia tab: one Markdown file per section in GUIA_DIR (read in name order),
+# and the assembly videos in VIDEO_DIR, one per joint, keyed by servo id. A
+# section shows the video of joint N where it says [video:N].
+GUIA_DIR = Path(__file__).resolve().parents[1] / "docs" / "guia"
+VIDEO_DIR = Path(__file__).resolve().parents[1] / "videos"
+VIDEOS = {
+    1: "Joint1_v2.mp4",
+    2: "Joint2_v2.mp4",
+    3: "Joint3_v2.mp4",
+    4: "Joint4_v2.mp4",
+    5: "Joint5_v2.mp4",
+    6: "Gripper_v2.mp4",
+}
+# Each video has a thumbnail with the same name in GUIA_DIR / "imatges".
+GUIA_IMAGE_DIR = GUIA_DIR / "imatges"
+GUIA_FONT = ("Arial", 12)
+# The section list of the Guia tab: bigger than the rest, to hit it easily.
+GUIA_MENU_FONT = ("Arial", 12, "bold")
 # Every button in the top row is this wide, so they line up.
 BUTTON_WIDTH = 19
 # Corner radius of the buttons, in pixels.
@@ -351,6 +359,18 @@ TEXTS = {
     "program_loaded": "Programa carregat de {path}.",
     "program_file_error": "No s'ha pogut obrir el fitxer: {detail}",
     "program_reset_done": "S'ha tornat a posar el programa d'exemple.",
+    # -- guide tab --
+    "tab_guide": "Guia",
+    "guide_missing": "No s'ha trobat la guia a {path}.",
+    "guide_video_button": "▶ Mira el vídeo",
+    "guide_copy": "Copiar al programa",
+    "guide_copied": "Copiat al final del programa. Mira la pestanya «Programa».",
+    "video_title": "Articulació {servo_id} – {name}",
+    "video_missing": "Falta el vídeo {path}. Executa videos/baixar_videos.sh.",
+    "video_opened": "Obrint el vídeo «{title}».",
+    "video_no_vlc": "Obrint el vídeo «{title}» (no hi ha VLC: el nom de l'articulació no sortirà al vídeo).",
+    "video_no_player": "No hi ha VLC ni cap reproductor de vídeo. Instal·la VLC: sudo apt install vlc",
+    "video_error": "No s'ha pogut obrir el vídeo: {detail}",
     "no_tk": "Tkinter no està instal·lat. A Raspberry Pi OS / Debian executa: sudo apt install python3-tk",
     "cli_description": "Aplicació del SO-101: fixa la posició zero, mou cada articulació i executa la tasca.",
     "cli_port": "dispositiu sèrie (per defecte: %(default)s)",
@@ -979,6 +999,14 @@ def apply_dark_theme(root):
               background=[("pressed", PANEL_BG), ("active", PANEL_BG), ("disabled", PANEL_BG)],
               foreground=[("active", BG), ("disabled", MUTED_FG)])
 
+    # Buttons inside the light grey guide text: the rounded corners must blend
+    # with that grey, not with the window.
+    style.configure("Guide.TButton", background=TEXT_BG, foreground=BUTTON_FG,
+                    focuscolor=CYAN, padding=(6, 4), font=BOLD_FONT)
+    style.map("Guide.TButton",
+              background=[("pressed", TEXT_BG), ("active", TEXT_BG), ("disabled", TEXT_BG)],
+              foreground=[("active", BG), ("disabled", MUTED_FG)])
+
     style.configure("TEntry", fieldbackground=FIELD_BG, foreground=FG,
                     insertcolor=CYAN, bordercolor=TEAL)
     style.map("TEntry",
@@ -1083,6 +1111,194 @@ def ask_si_no(parent, title, text):
     return answer["value"]
 
 
+# -- guide tab (pure, unit tested) ---------------------------------------------
+
+_GUIA_NUMBER = re.compile(r"^(\d+)\.\s+(.*)$")
+_GUIA_IMAGE = re.compile(r"^!\[[^\]]*\]\(([^)]+)\)$")
+_GUIA_VIDEO = re.compile(r"^\[video:(\d+)\]$")
+
+
+def parse_guia(text):
+    """Read one guide section, written in a small subset of Markdown.
+
+    Returns a list of (kind, content) blocks:
+      "# x" title, "## x" heading, "- x" bullet, "1. x" number (content (1, x)),
+      "> x" warning, "```" ... "```" code, "![](path)" image, "[video:N]" video
+      (content N, an int), and any other run of lines is one paragraph.
+    Inline **bold** is left in the text; split_bold() handles it when drawing.
+    """
+    blocks, paragraph, code = [], [], None
+
+    def flush():
+        if paragraph:
+            blocks.append(("paragraph", " ".join(paragraph)))
+            paragraph.clear()
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if code is not None:
+            if line.startswith("```"):
+                blocks.append(("code", "\n".join(code)))
+                code = None
+            else:
+                code.append(raw.rstrip())
+            continue
+        if line.startswith("```"):
+            flush()
+            code = []
+        elif not line:
+            flush()
+        elif line.startswith("## "):
+            flush()
+            blocks.append(("heading", line[3:].strip()))
+        elif line.startswith("# "):
+            flush()
+            blocks.append(("title", line[2:].strip()))
+        elif line.startswith("- "):
+            flush()
+            blocks.append(("bullet", line[2:].strip()))
+        elif line.startswith(">"):
+            flush()
+            blocks.append(("warning", line[1:].strip()))
+        elif _GUIA_NUMBER.match(line):
+            flush()
+            number, rest = _GUIA_NUMBER.match(line).groups()
+            blocks.append(("number", (int(number), rest)))
+        elif _GUIA_IMAGE.match(line):
+            flush()
+            blocks.append(("image", _GUIA_IMAGE.match(line).group(1)))
+        elif _GUIA_VIDEO.match(line):
+            flush()
+            blocks.append(("video", int(_GUIA_VIDEO.match(line).group(1))))
+        else:
+            paragraph.append(line)
+    if code is not None:  # an unclosed block still shows
+        blocks.append(("code", "\n".join(code)))
+    flush()
+    return blocks
+
+
+def split_bold(text):
+    """'a **b** c' -> [("a ", False), ("b", True), (" c", False)], empty parts dropped."""
+    return [(part, index % 2 == 1) for index, part in enumerate(text.split("**")) if part]
+
+
+def load_guia(folder=GUIA_DIR):
+    """[(title, blocks)] for every *.md in `folder`, in file name order.
+
+    The title is the first "# " line of the file, or the file name without it.
+    """
+    sections = []
+    for path in sorted(Path(folder).glob("*.md")):
+        blocks = parse_guia(path.read_text(encoding="utf-8"))
+        title = next((content for kind, content in blocks if kind == "title"), path.stem)
+        sections.append((title, blocks))
+    return sections
+
+
+def video_title(servo_id):
+    """What VLC shows for the video of a joint, e.g. "Articulació 1 – Base"."""
+    return TEXTS["video_title"].format(servo_id=servo_id, name=nom_articulacio(servo_id))
+
+
+def video_path(servo_id, folder=VIDEO_DIR):
+    return Path(folder) / VIDEOS[servo_id]
+
+
+def video_thumbnail(servo_id, folder=GUIA_IMAGE_DIR):
+    return Path(folder) / (Path(VIDEOS[servo_id]).stem + ".png")
+
+
+# Where VLC can be besides the PATH: a snap, or a flatpak.
+VLC_SNAP = "/snap/bin/vlc"
+VLC_FLATPAK = "org.videolan.VLC"
+
+
+def find_vlc(which=None, exists=None, run=None):
+    """The command that starts VLC, as a list, or None when it is not installed.
+
+    Raspberry Pi OS ships VLC as a normal package; on Ubuntu it is often a snap
+    (not always on the PATH of a desktop launcher) or a flatpak.
+    """
+    which = which or shutil.which
+    exists = exists or (lambda path: Path(path).exists())
+    run = run or subprocess.run
+    vlc = which("vlc")
+    if vlc:
+        return [vlc]
+    if exists(VLC_SNAP):
+        return [VLC_SNAP]
+    flatpak = which("flatpak")
+    if flatpak:
+        try:
+            info = run([flatpak, "info", VLC_FLATPAK], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            info = None
+        if info is not None and info.returncode == 0:
+            return [flatpak, "run", VLC_FLATPAK]
+    return None
+
+
+def default_video_app(which=None, run=None):
+    """The desktop's default application for .mp4 files, or "" when there is none."""
+    which = which or shutil.which
+    run = run or subprocess.run
+    xdg_mime = which("xdg-mime")
+    if not xdg_mime:
+        return ""
+    try:
+        result = run([xdg_mime, "query", "default", "video/mp4"], capture_output=True,
+                     text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def vlc_command(vlc, path, title):
+    """VLC with the joint's name on the window, in the playlist and over the video.
+
+    `vlc` is the command that starts it, a string or a list (see find_vlc()).
+    """
+    vlc = [vlc] if isinstance(vlc, str) else list(vlc)
+    return [
+        *vlc, "--play-and-exit",
+        f"--video-title={title}", f"--meta-title={title}",
+        "--sub-source=marq", f"--marq-marquee={title}",
+        "--marq-position=4", "--marq-size=32", "--marq-color=0x6CDAE7",
+        str(path),
+    ]
+
+
+def play_video(path, title, popen=None, find=None, default_app=None, which=None):
+    """Open a video in another application, without waiting for it.
+
+    VLC first, so the joint's name shows; otherwise the desktop's default video
+    player through xdg-open. xdg-open fails silently when there is no default
+    player, so that case is checked first and reported instead.
+    Returns (ok, message) for the status line.
+    """
+    popen = popen or subprocess.Popen
+    find = find or find_vlc
+    default_app = default_app or default_video_app
+    which = which or shutil.which
+    path = Path(path)
+    if not path.exists():
+        return False, TEXTS["video_missing"].format(path=path)
+    vlc = find()
+    if vlc:
+        command, message = vlc_command(vlc, path, title), TEXTS["video_opened"]
+    elif which("xdg-open") and default_app():
+        command, message = [which("xdg-open"), str(path)], TEXTS["video_no_vlc"]
+    else:
+        return False, TEXTS["video_no_player"]
+    try:
+        popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as exc:
+        return False, TEXTS["video_error"].format(detail=exc)
+    return True, message.format(title=title)
+
+
 class RobotApp:
     def __init__(self, root, port, baudrate, ids):
         self.root = root
@@ -1164,11 +1380,14 @@ class RobotApp:
         self.notebook.pack(fill="x", pady=(12, 0))
         control_tab = ttk.Frame(self.notebook, padding=(0, 10))
         program_tab = ttk.Frame(self.notebook, padding=(0, 10))
+        guide_tab = ttk.Frame(self.notebook, padding=(0, 10))
         self.notebook.add(control_tab, text=TEXTS["tab_control"])
         self.notebook.add(program_tab, text=TEXTS["tab_program"])
+        self.notebook.add(guide_tab, text=TEXTS["tab_guide"])
         self._build_joint_sliders(control_tab)
         self._build_motion_panel(control_tab)
         self._build_program_tab(program_tab)
+        self._build_guide_tab(guide_tab)
 
         self.status_var = tk.StringVar(value=TEXTS["ready"])
         ttk.Label(frame, textvariable=self.status_var, wraplength=720, justify="left",
@@ -1346,6 +1565,144 @@ class RobotApp:
                   style="Hint.TLabel").pack(
             anchor="w", pady=(2, 0)
         )
+
+    # -- guide tab -----------------------------------------------------------
+
+    def _build_guide_tab(self, parent):
+        try:
+            self.guide_sections = load_guia()
+        except OSError:
+            self.guide_sections = []
+        # Tk drops images and embedded widgets nothing holds; these are
+        # replaced every time another section is shown.
+        self._guide_images = []
+        self._guide_widgets = []
+
+        self.guide_list = tk.Listbox(
+            parent, width=18, activestyle="none", exportselection=False,
+            font=GUIA_MENU_FONT, bg=PANEL_BG, fg=FG, selectbackground=TEAL,
+            selectforeground="#FFFFFF", highlightthickness=1, highlightbackground=TEAL,
+            highlightcolor=CYAN, borderwidth=0,
+        )
+        for title, _ in self.guide_sections:
+            self.guide_list.insert("end", title)
+        self.guide_list.pack(side="left", fill="y")
+        self.guide_list.bind("<<ListboxSelect>>", self.on_guide_select)
+
+        reader = ttk.Frame(parent)
+        reader.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        self.guide_text = tk.Text(reader, height=20, wrap="word", font=GUIA_FONT,
+                                  padx=14, pady=10, cursor="arrow")
+        scroll = ttk.Scrollbar(reader, orient="vertical", command=self.guide_text.yview)
+        self.guide_text.configure(yscrollcommand=scroll.set)
+        self.guide_text.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        style_text(self.guide_text)
+
+        text = self.guide_text
+        text.tag_configure("title", font=("Arial", 18, "bold"), foreground=TEAL, spacing3=8)
+        text.tag_configure("heading", font=("Arial", 14, "bold"), foreground=TEAL,
+                           spacing1=12, spacing3=4)
+        text.tag_configure("bold", font=("Arial", 12, "bold"))
+        text.tag_configure("paragraph", spacing3=6)
+        text.tag_configure("item", lmargin1=12, lmargin2=34, spacing3=3)
+        text.tag_configure("code", font=("monospace", 11), background="#D6D6D6",
+                           lmargin1=18, lmargin2=18, spacing1=4)
+        text.tag_configure("warning", font=("Arial", 12, "bold"), foreground="#6B1A00",
+                           background="#E8C27A", lmargin1=8, lmargin2=8, spacing1=6, spacing3=6)
+        text.tag_configure("widget", lmargin1=18, spacing1=4, spacing3=8)
+
+        if self.guide_sections:
+            self.guide_list.selection_set(0)
+            self.show_guide_section(0)
+        else:
+            text.insert("end", TEXTS["guide_missing"].format(path=GUIA_DIR))
+            text.configure(state="disabled")
+
+    def on_guide_select(self, _event=None):
+        selection = self.guide_list.curselection()
+        if selection:
+            self.show_guide_section(selection[0])
+
+    def show_guide_section(self, index):
+        text = self.guide_text
+        text.configure(state="normal")
+        for widget in self._guide_widgets:
+            widget.destroy()
+        self._guide_widgets, self._guide_images = [], []
+        text.delete("1.0", "end")
+        _, blocks = self.guide_sections[index]
+        for kind, content in blocks:
+            if kind == "title":
+                self._guide_insert(content + "\n", "title")
+            elif kind == "heading":
+                self._guide_insert(content + "\n", "heading")
+            elif kind == "paragraph":
+                self._guide_insert(content + "\n", "paragraph")
+            elif kind == "bullet":
+                self._guide_insert("•  " + content + "\n", "item")
+            elif kind == "number":
+                number, rest = content
+                self._guide_insert(f"{number}.  {rest}\n", "item")
+            elif kind == "warning":
+                self._guide_insert(content + "\n", "warning")
+            elif kind == "code":
+                text.insert("end", content + "\n", "code")
+                self._guide_embed(ttk.Button(
+                    text, text=TEXTS["guide_copy"], style="Guide.TButton",
+                    command=lambda code=content: self.copy_to_program(code),
+                ))
+            elif kind == "image":
+                image = self._guide_image(GUIA_DIR / content)
+                if image is not None:
+                    text.image_create("end", image=image, padx=18, pady=4)
+                    text.insert("end", "\n")
+            elif kind == "video" and content in VIDEOS:
+                self._guide_embed(self._guide_video(content))
+        text.configure(state="disabled")
+        text.yview_moveto(0)
+
+    def _guide_insert(self, line, tag):
+        for part, bold in split_bold(line):
+            self.guide_text.insert("end", part, (tag, "bold") if bold else (tag,))
+
+    def _guide_embed(self, widget):
+        self._guide_widgets.append(widget)
+        self.guide_text.window_create("end", window=widget)
+        self.guide_text.insert("end", "\n", "widget")
+
+    def _guide_image(self, path):
+        image = load_logo(self.root, path)  # any PNG, tied to this window
+        if image is not None:
+            self._guide_images.append(image)
+        return image
+
+    def _guide_video(self, servo_id):
+        """Thumbnail and button; clicking either opens the video in VLC."""
+        box = tk.Frame(self.guide_text, bg=TEXT_BG)
+        play = lambda _event=None, sid=servo_id: self.open_video(sid)  # noqa: E731
+        image = self._guide_image(video_thumbnail(servo_id))
+        if image is not None:
+            thumb = tk.Label(box, image=image, bg=TEXT_BG, cursor="hand2",
+                             borderwidth=2, relief="solid", highlightthickness=0)
+            thumb.pack(side="left")
+            thumb.bind("<Button-1>", play)
+        ttk.Button(
+            box, text=f"{TEXTS['guide_video_button']}\n{video_title(servo_id)}",
+            style="Guide.TButton", command=play,
+        ).pack(side="left", padx=(12, 0))
+        return box
+
+    def open_video(self, servo_id):
+        ok, message = play_video(video_path(servo_id), video_title(servo_id))
+        self.set_status(message, ok=None if ok else False)
+        return ok
+
+    def copy_to_program(self, code):
+        current = self.program_code().rstrip("\n")
+        self.set_program_code((current + "\n\n" if current else "") + code.rstrip("\n") + "\n")
+        self.code_box.see("end")
+        self.set_status(TEXTS["guide_copied"], ok=True)
 
     # -- live angles ---------------------------------------------------------
 

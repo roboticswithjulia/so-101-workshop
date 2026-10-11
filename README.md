@@ -1,6 +1,6 @@
 # LEERobot SO-101 Workshop App
 
-Tools and a small desktop application for the LEERobot SO-101 workshop. Everything runs on a Raspberry Pi 3 B without a browser and talks to the Feetech STS3215 servos through the official Feetech SDK.
+Tools and a small desktop application for the LEERobot SO-101 workshop. Everything runs on a Raspberry Pi 5 without a browser and talks to the Feetech STS3215 servos through the official Feetech SDK.
 
 ## Project goal
 
@@ -14,7 +14,7 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 
 ## Included features
 
-- desktop app (Python and Tkinter, Catalan interface) with two tabs: joint sliders with the live angle of each servo, and a code editor where teams complete the coordinates of ready-made movement functions
+- desktop app (Python and Tkinter, Catalan interface) with three tabs: joint sliders with the live angle of each servo, a code editor where teams complete the coordinates of ready-made movement functions, and the workshop guide with the assembly videos
 - a task player with Executar, Pas a pas, Pausa and Aturar that runs the team's program
 - command line tools to find the servos, check their configuration and watch their positions
 - a real robot adapter and a simulated robot with the same interface, ready for a future workshop UI
@@ -24,7 +24,7 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
 ## Project structure
 
 - `app/` – desktop application
-  - `app/app.py` – the whole app: Control tab with the joint sliders, and Programa tab where the task is written and run
+  - `app/app.py` – the whole app: Control tab with the joint sliders, Programa tab where the task is written and run, and Guia tab with the workshop guide
 - `src/` – source code: robot logic and servo tools
   - `src/robot_controller.py` – safe controller logic (used by the tests and by a future workshop UI)
   - `src/mock_robot.py` – simulated robot with the same interface as the real one
@@ -38,17 +38,20 @@ This project supports a 4-hour robotics workshop where newcomers learn to:
   - `src/servo_wiring.py` – wiring and safety diagram
 - `logo/` – the JMRobotics logo: `Logo_JMR.svg` is the source, `Logo_JMR.png` is what the app shows
 - `tests/` – validation tests
+- `docs/guia/` – the workshop guide shown in the Guia tab: one Markdown file per section, and `imatges/` with the video thumbnails
+- `videos/` – the SO-101 assembly videos from the Hugging Face LeRobot docs, one per joint, and `baixar_videos.sh` to download them again
 - `docs/` – documentation: `FTSERVO_SDK.md` (Feetech SDK reference), `context.md` (workshop context) and the workshop proposal PDF
 
 All servo communication goes through the official Feetech SDK (`ftservo-python-sdk`, imported as `scservo_sdk`). Run every script from the project folder; the app and the tools can be run directly (`python3 app/app.py`) or as modules (`python3 -m app.app`, `python3 -m src.servo_scan`).
 
 ## Requirements
 
-### Raspberry Pi 3 B
+### Raspberry Pi 5
 
-- Raspberry Pi OS (recommended)
+- Raspberry Pi OS with desktop (recommended)
 - Python 3
 - Tkinter
+- VLC, to play the assembly videos of the Guia tab (installed by default on Raspberry Pi OS with desktop; otherwise `sudo apt install vlc`)
 - the Python packages in `requirements.txt`: `pyserial` and the official Feetech SDK `ftservo-python-sdk` (imported as `scservo_sdk`)
 
 Install them from the project folder:
@@ -119,24 +122,7 @@ The second row of the panel holds the **step durations**: how long the program w
 
 ### Programa tab
 
-This is where the task is written and run. The editor opens with the Repte 1 template: the functions are written already and teams only complete the coordinates.
-
-```python
-inici()
-anar_a(base=-3, espatlla=48, colze=14, canell=-25, gir=-6)
-tancar_pinca(-40)
-esperar(0.5)
-
-anar_a(base=-3, espatlla=27, colze=15, canell=-7, gir=-6)
-anar_a(base=14, espatlla=22, colze=14, canell=-3, gir=-6)
-
-anar_a(base=32, espatlla=66, colze=45, canell=-16, gir=-6)
-obrir_pinca(10)
-
-anar_a(base=31, espatlla=36, colze=18, canell=-16, gir=-6)
-
-inici()
-```
+This is where the task is written and run. The editor opens with only the comments of the Repte 1 template: what the task is, how to add a position and the list of functions below. Each team writes its own program under them. **Exemple** puts those comments back.
 
 | Function | What it does |
 |---|---|
@@ -160,7 +146,37 @@ All of them accept `segons=` to override the default duration, and `for` loops w
 
 Freezing commands every servo the position it currently reads, with the torque left on, so the arm never goes limp. While a program runs, the editor, the sliders and the other buttons are disabled.
 
-Errors are reported in Catalan: a syntax error gives the line number, an unknown function gives the name. A program is capped at 200 steps, so a runaway `while True` is caught rather than run, and the code runs with a restricted set of builtins, so imports, `open` and `eval` are unreachable. **Desar** and **Carregar** write and read the program as a `.py` file, and **Exemple** restores the template.
+Errors are reported in Catalan: a syntax error gives the line number, an unknown function gives the name. A program is capped at 200 steps, so a runaway `while True` is caught rather than run, and the code runs with a restricted set of builtins, so imports, `open` and `eval` are unreachable. **Desar** and **Carregar** write and read the program as a `.py` file.
+
+### Guia tab
+
+The workshop guide for the participants (12 to 18 years old), in Catalan, inside the app so nobody needs a browser. The list on the left picks a section, and the text on the right shows it:
+
+1. Benvinguts – plan of the day, teams and safety rules
+2. Coneix el robot – the six joints and their IDs
+3. Muntatge – joint by joint assembly, with a video per joint
+4. Cablejat – the daisy chain and the 7.4 V supply
+5. L'app – Control, Motors lliures and the Programa buttons
+6. Les funcions – `anar_a()`, `obrir_pinca()`, … with an example each
+7. Reptes – Repte 1, Repte 2 and the Jenga Robòtic scoring
+8. Si alguna cosa falla – troubleshooting
+
+Clicking a video thumbnail or its **▶ Mira el vídeo** button opens the video in VLC without blocking the app. VLC shows the joint ("Articulació 1 – Base", …) in the window title and over the video for the whole clip. Without VLC the video opens with `xdg-open`, without the name. Every code example has a **Copiar al programa** button that adds it to the end of the program.
+
+Each section is a Markdown file in `docs/guia/`, read in file name order, so the guide is edited without touching Python. The app understands a small subset:
+
+| Write | You get |
+|---|---|
+| `# Títol` | the section title, also its name in the list |
+| `## Apartat` | a heading |
+| `- text` / `1. text` | a bullet / a numbered step |
+| `**text**` | bold |
+| `> ⚠ text` | a highlighted warning |
+| ```` ``` ```` … ```` ``` ```` | a code example with a Copiar al programa button |
+| `![](imatges/foto.png)` | a PNG image from `docs/guia/imatges/` |
+| `[video:N]` | the video of joint N (1–6), with its thumbnail |
+
+The joint videos and their names are the `VIDEOS` table and `NOMS_ARTICULACIONS` in `app/app.py`. A test checks that every image and video the guide names exists, and that every code example is a valid program.
 
 ## Run the tests
 

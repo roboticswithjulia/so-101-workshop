@@ -217,8 +217,8 @@ class TaskDefinitionTests(unittest.TestCase):
             self.assertEqual(len(errors), 1, pose)
             self.assertIn("la posició ha de ser", errors[0])
 
-    def test_validate_task_accepts_the_example_program(self):
-        steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
+    def test_validate_task_accepts_the_default_gripper_angles(self):
+        steps, error = robot_app.run_program("inici()\nobrir_pinca()\ntancar_pinca()\n")
 
         self.assertIsNone(error)
         # PINCA_OBERTA and PINCA_TANCADA sit exactly on joint 6's limits.
@@ -548,18 +548,6 @@ class ProgramTests(unittest.TestCase):
 
     def names(self, steps):
         return [step.name for step in steps]
-
-    def test_the_example_program_builds_a_valid_task(self):
-        """The template is edited for each workshop, so only check that it runs."""
-        steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
-
-        self.assertIsNone(error)
-        self.assertEqual(robot_app.validate_task(steps), [])
-        self.assertGreater(len(steps), 1)
-        # It must grip the object and then release it, whatever angles it uses.
-        names = [step.name for step in steps]
-        self.assertLess(names.index(robot_app.TEXTS["program_step_close"]),
-                        names.index(robot_app.TEXTS["program_step_open"]))
 
     def test_a_pose_only_moves_the_joints_the_participant_gave(self):
         steps, _ = robot_app.run_program("anar_a(base=10)")
@@ -911,23 +899,17 @@ class GripperAngleTests(unittest.TestCase):
 
 
 class DefaultProgramTests(unittest.TestCase):
-    def test_the_default_program_runs_and_validates(self):
+    def test_the_default_program_is_only_comments(self):
+        lines = [line.strip() for line in robot_app.PROGRAMA_EXEMPLE.splitlines() if line.strip()]
+
+        self.assertTrue(lines)
+        self.assertTrue(all(line.startswith("#") for line in lines))
+
+    def test_running_it_asks_for_a_move(self):
         steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
 
-        self.assertIsNone(error)
-        self.assertEqual(len(steps), len([
-            line for line in robot_app.PROGRAMA_EXEMPLE.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]))
-        self.assertEqual(robot_app.validate_task(steps), [])
-
-    def test_it_starts_at_home_and_grips_before_releasing(self):
-        steps, _ = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
-        names = [step.name for step in steps]
-
-        self.assertEqual(names[0], TEXTS_HOME := robot_app.TEXTS["program_step_home"])
-        self.assertLess(names.index(robot_app.TEXTS["program_step_close"]),
-                        names.index(robot_app.TEXTS["program_step_open"]))
+        self.assertIsNone(steps)
+        self.assertEqual(error, robot_app.TEXTS["program_no_steps"])
 
 
 class StepDurationTests(unittest.TestCase):
@@ -1040,3 +1022,184 @@ class RoundedTabTests(unittest.TestCase):
             self.assertEqual(style.layout("TNotebook.Tab")[0][0], "Rounded.tab")
         finally:
             root.destroy()
+
+
+class GuideParserTests(unittest.TestCase):
+    def test_parse_guia_reads_every_kind_of_block(self):
+        text = (
+            "# Títol\n\nUna frase\nque continua.\n\n## Apartat\n- un punt\n1. primer pas\n"
+            "> ⚠ Compte\n![](imatges/x.png)\n[video:3]\n```\nanar_a(base=1)\n    inici()\n```\n"
+        )
+        self.assertEqual(robot_app.parse_guia(text), [
+            ("title", "Títol"),
+            ("paragraph", "Una frase que continua."),
+            ("heading", "Apartat"),
+            ("bullet", "un punt"),
+            ("number", (1, "primer pas")),
+            ("warning", "⚠ Compte"),
+            ("image", "imatges/x.png"),
+            ("video", 3),
+            ("code", "anar_a(base=1)\n    inici()"),
+        ])
+
+    def test_an_unclosed_code_block_still_shows(self):
+        self.assertEqual(robot_app.parse_guia("```\ninici()"), [("code", "inici()")])
+
+    def test_split_bold(self):
+        self.assertEqual(robot_app.split_bold("a **b** c"), [("a ", False), ("b", True), (" c", False)])
+        self.assertEqual(robot_app.split_bold("**tot**"), [("tot", True)])
+
+    def test_load_guia_takes_the_title_from_the_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with open(os.path.join(folder, "02_b.md"), "w", encoding="utf-8") as handle:
+                handle.write("# Segona\n")
+            with open(os.path.join(folder, "01_a.md"), "w", encoding="utf-8") as handle:
+                handle.write("sense títol\n")
+            titles = [title for title, _ in robot_app.load_guia(folder)]
+        self.assertEqual(titles, ["01_a", "Segona"])
+
+
+class GuideContentTests(unittest.TestCase):
+    """The guide that ships with the app: every image and video it names exists."""
+
+    def test_the_guide_has_sections(self):
+        self.assertGreaterEqual(len(robot_app.load_guia()), 8)
+
+    def test_every_image_and_video_exists(self):
+        for title, blocks in robot_app.load_guia():
+            for kind, content in blocks:
+                if kind == "image":
+                    self.assertTrue((robot_app.GUIA_DIR / content).exists(), f"{title}: {content}")
+                elif kind == "video":
+                    self.assertIn(content, robot_app.VIDEOS, f"{title}: [video:{content}]")
+                    self.assertTrue(robot_app.video_path(content).exists(), f"{title}: vídeo {content}")
+                    self.assertTrue(robot_app.video_thumbnail(content).exists(), f"{title}: miniatura {content}")
+
+    def test_the_assembly_section_shows_every_joint_video(self):
+        videos = {content for _, blocks in robot_app.load_guia()
+                  for kind, content in blocks if kind == "video"}
+        self.assertEqual(videos, set(robot_app.VIDEOS))
+
+    def test_every_code_example_is_a_valid_program(self):
+        for title, blocks in robot_app.load_guia():
+            for kind, content in blocks:
+                if kind == "code" and "→" not in content:  # the wiring chain is a diagram
+                    steps, error = robot_app.run_program(content)
+                    self.assertIsNone(error, f"{title}: {content}")
+
+
+class VideoTests(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        self.popen = lambda command, **kwargs: self.calls.append(command)
+        self.video = robot_app.video_path(1)
+
+    def test_video_title_uses_the_joint_names_of_the_app(self):
+        self.assertEqual(robot_app.video_title(1), "Articulació 1 – Base")
+        self.assertEqual(robot_app.video_title(2), "Articulació 2 – Espatlla")
+        self.assertEqual(robot_app.video_title(6), "Articulació 6 – Pinça")
+
+    def play(self, vlc=("/usr/bin/vlc",), default_app="", path=None, popen=None):
+        return robot_app.play_video(
+            path or self.video, "Articulació 1 – Base", popen=popen or self.popen,
+            find=lambda: list(vlc) if vlc else None, default_app=lambda: default_app,
+            which=lambda name: f"/usr/bin/{name}",
+        )
+
+    def test_vlc_shows_the_joint_name(self):
+        ok, message = self.play()
+        self.assertTrue(ok)
+        command = self.calls[0]
+        self.assertEqual(command[0], "/usr/bin/vlc")
+        self.assertIn("--video-title=Articulació 1 – Base", command)
+        self.assertIn("--meta-title=Articulació 1 – Base", command)
+        self.assertIn("--marq-marquee=Articulació 1 – Base", command)
+        self.assertEqual(command[-1], str(self.video))
+        self.assertIn("Articulació 1 – Base", message)
+
+    def test_a_flatpak_vlc_keeps_its_launcher(self):
+        self.play(vlc=("/usr/bin/flatpak", "run", "org.videolan.VLC"))
+        self.assertEqual(self.calls[0][:4], ["/usr/bin/flatpak", "run", "org.videolan.VLC", "--play-and-exit"])
+
+    def test_falls_back_to_the_default_player_without_vlc(self):
+        ok, message = self.play(vlc=None, default_app="totem.desktop")
+        self.assertTrue(ok)
+        self.assertEqual(self.calls, [["/usr/bin/xdg-open", str(self.video)]])
+        self.assertIn("no hi ha VLC", message)
+
+    def test_reports_no_player_instead_of_a_silent_xdg_open(self):
+        ok, message = self.play(vlc=None, default_app="")
+        self.assertFalse(ok)
+        self.assertEqual(self.calls, [])
+        self.assertIn("sudo apt install vlc", message)
+
+    def test_reports_a_missing_file(self):
+        ok, message = self.play(path="/no/hi/es.mp4")
+        self.assertFalse(ok)
+        self.assertEqual(self.calls, [])
+        self.assertIn("baixar_videos.sh", message)
+
+    def test_reports_a_player_that_does_not_start(self):
+        def broken(command, **kwargs):
+            raise OSError("permís denegat")
+        ok, message = self.play(popen=broken)
+        self.assertFalse(ok)
+        self.assertIn("permís denegat", message)
+
+    def test_find_vlc_looks_in_the_path_then_snap_then_flatpak(self):
+        none = lambda name: None  # noqa: E731
+        self.assertEqual(robot_app.find_vlc(which=lambda n: "/usr/bin/vlc" if n == "vlc" else None),
+                         ["/usr/bin/vlc"])
+        self.assertEqual(robot_app.find_vlc(which=none, exists=lambda p: p == "/snap/bin/vlc"),
+                         ["/snap/bin/vlc"])
+
+        class Done:
+            returncode = 0
+        flatpak = lambda n: "/usr/bin/flatpak" if n == "flatpak" else None  # noqa: E731
+        self.assertEqual(robot_app.find_vlc(which=flatpak, exists=lambda p: False, run=lambda *a, **k: Done()),
+                         ["/usr/bin/flatpak", "run", "org.videolan.VLC"])
+        Done.returncode = 1
+        self.assertIsNone(robot_app.find_vlc(which=flatpak, exists=lambda p: False, run=lambda *a, **k: Done()))
+        self.assertIsNone(robot_app.find_vlc(which=none, exists=lambda p: False))
+
+
+@unittest.skipUnless(HAS_DISPLAY, "no usable display for Tk")
+class GuideTabTests(unittest.TestCase):
+    def setUp(self):
+        self.root = robot_app.tk.Tk()
+        self.root.withdraw()
+        self.app = robot_app.RobotApp(self.root, "/dev/fake", 1000000, list(range(1, 7)))
+
+    def tearDown(self):
+        self.root.destroy()
+
+    def test_the_guide_is_the_third_tab(self):
+        tabs = [self.app.notebook.tab(tab, "text") for tab in self.app.notebook.tabs()]
+        self.assertEqual(tabs, ["Control", "Programa", "Guia"])
+
+    def test_every_section_renders(self):
+        self.assertEqual(self.app.guide_list.size(), len(self.app.guide_sections))
+        for index, (title, _) in enumerate(self.app.guide_sections):
+            self.app.show_guide_section(index)
+            self.assertTrue(self.app.guide_text.get("1.0", "end").startswith(title))
+
+    def test_the_assembly_section_embeds_a_video_per_joint(self):
+        titles = [title for title, _ in self.app.guide_sections]
+        self.app.show_guide_section(titles.index("Muntatge"))
+        self.assertEqual(len(self.app._guide_widgets), len(robot_app.VIDEOS))
+
+    def test_open_video_reports_on_the_status_line(self):
+        original = robot_app.play_video
+        seen = []
+        robot_app.play_video = lambda path, title: (seen.append((path, title)), (True, "Obrint"))[1]
+        try:
+            self.assertTrue(self.app.open_video(3))
+        finally:
+            robot_app.play_video = original
+        self.assertEqual(seen, [(robot_app.video_path(3), "Articulació 3 – Colze")])
+        self.assertEqual(self.app.status_var.get(), "Obrint")
+
+    def test_copy_to_program_appends_the_example(self):
+        self.app.set_program_code("inici()\n")
+        self.app.copy_to_program("esperar(2)\n")
+        self.assertEqual(self.app.program_code(), "inici()\n\nesperar(2)\n")
