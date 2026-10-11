@@ -185,7 +185,7 @@ VIDEOS = {
 GUIA_IMAGE_DIR = GUIA_DIR / "imatges"
 GUIA_FONT = ("Arial", 12)
 # The section list of the Guia tab: bigger than the rest, to hit it easily.
-GUIA_MENU_FONT = ("Arial", 14, "bold")
+GUIA_MENU_FONT = ("Arial", 12, "bold")
 # Every button in the top row is this wide, so they line up.
 BUTTON_WIDTH = 19
 # Corner radius of the buttons, in pixels.
