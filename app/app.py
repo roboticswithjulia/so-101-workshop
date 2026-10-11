@@ -380,7 +380,7 @@ TEXTS = {
     "video_missing": "Falta el vídeo {path}. Executa videos/baixar_videos.sh.",
     "video_opened": "Obrint el vídeo «{title}».",
     "video_no_vlc": "Obrint el vídeo «{title}» (no hi ha VLC: el nom de l'articulació no sortirà al vídeo).",
-    "video_no_player": "No s'ha trobat cap reproductor de vídeo. Instal·la VLC: sudo apt install vlc",
+    "video_no_player": "No hi ha VLC ni cap reproductor de vídeo. Instal·la VLC: sudo apt install vlc",
     "video_error": "No s'ha pogut obrir el vídeo: {detail}",
     "no_tk": "Tkinter no està instal·lat. A Raspberry Pi OS / Debian executa: sudo apt install python3-tk",
     "cli_description": "Aplicació del SO-101: fixa la posició zero, mou cada articulació i executa la tasca.",
@@ -1220,10 +1220,60 @@ def video_thumbnail(servo_id, folder=GUIA_IMAGE_DIR):
     return Path(folder) / (Path(VIDEOS[servo_id]).stem + ".png")
 
 
+# Where VLC can be besides the PATH: a snap, or a flatpak.
+VLC_SNAP = "/snap/bin/vlc"
+VLC_FLATPAK = "org.videolan.VLC"
+
+
+def find_vlc(which=None, exists=None, run=None):
+    """The command that starts VLC, as a list, or None when it is not installed.
+
+    Raspberry Pi OS ships VLC as a normal package; on Ubuntu it is often a snap
+    (not always on the PATH of a desktop launcher) or a flatpak.
+    """
+    which = which or shutil.which
+    exists = exists or (lambda path: Path(path).exists())
+    run = run or subprocess.run
+    vlc = which("vlc")
+    if vlc:
+        return [vlc]
+    if exists(VLC_SNAP):
+        return [VLC_SNAP]
+    flatpak = which("flatpak")
+    if flatpak:
+        try:
+            info = run([flatpak, "info", VLC_FLATPAK], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            info = None
+        if info is not None and info.returncode == 0:
+            return [flatpak, "run", VLC_FLATPAK]
+    return None
+
+
+def default_video_app(which=None, run=None):
+    """The desktop's default application for .mp4 files, or "" when there is none."""
+    which = which or shutil.which
+    run = run or subprocess.run
+    xdg_mime = which("xdg-mime")
+    if not xdg_mime:
+        return ""
+    try:
+        result = run([xdg_mime, "query", "default", "video/mp4"], capture_output=True,
+                     text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def vlc_command(vlc, path, title):
-    """VLC with the joint's name on the window, in the playlist and over the video."""
+    """VLC with the joint's name on the window, in the playlist and over the video.
+
+    `vlc` is the command that starts it, a string or a list (see find_vlc()).
+    """
+    vlc = [vlc] if isinstance(vlc, str) else list(vlc)
     return [
-        vlc, "--play-and-exit",
+        *vlc, "--play-and-exit",
         f"--video-title={title}", f"--meta-title={title}",
         "--sub-source=marq", f"--marq-marquee={title}",
         "--marq-position=4", "--marq-size=32", "--marq-color=0x6CDAE7",
@@ -1231,21 +1281,25 @@ def vlc_command(vlc, path, title):
     ]
 
 
-def play_video(path, title, popen=None, which=None):
+def play_video(path, title, popen=None, find=None, default_app=None, which=None):
     """Open a video in another application, without waiting for it.
 
-    VLC first, so the joint's name shows; otherwise whatever xdg-open picks.
+    VLC first, so the joint's name shows; otherwise the desktop's default video
+    player through xdg-open. xdg-open fails silently when there is no default
+    player, so that case is checked first and reported instead.
     Returns (ok, message) for the status line.
     """
     popen = popen or subprocess.Popen
+    find = find or find_vlc
+    default_app = default_app or default_video_app
     which = which or shutil.which
     path = Path(path)
     if not path.exists():
         return False, TEXTS["video_missing"].format(path=path)
-    vlc = which("vlc")
+    vlc = find()
     if vlc:
         command, message = vlc_command(vlc, path, title), TEXTS["video_opened"]
-    elif which("xdg-open"):
+    elif which("xdg-open") and default_app():
         command, message = [which("xdg-open"), str(path)], TEXTS["video_no_vlc"]
     else:
         return False, TEXTS["video_no_player"]

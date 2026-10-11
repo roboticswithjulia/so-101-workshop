@@ -1117,9 +1117,15 @@ class VideoTests(unittest.TestCase):
         self.assertEqual(robot_app.video_title(2), "Articulació 2 – Espatlla")
         self.assertEqual(robot_app.video_title(6), "Articulació 6 – Pinça")
 
+    def play(self, vlc=("/usr/bin/vlc",), default_app="", path=None, popen=None):
+        return robot_app.play_video(
+            path or self.video, "Articulació 1 – Base", popen=popen or self.popen,
+            find=lambda: list(vlc) if vlc else None, default_app=lambda: default_app,
+            which=lambda name: f"/usr/bin/{name}",
+        )
+
     def test_vlc_shows_the_joint_name(self):
-        ok, message = robot_app.play_video(self.video, "Articulació 1 – Base", popen=self.popen,
-                                           which=lambda name: f"/usr/bin/{name}")
+        ok, message = self.play()
         self.assertTrue(ok)
         command = self.calls[0]
         self.assertEqual(command[0], "/usr/bin/vlc")
@@ -1129,22 +1135,24 @@ class VideoTests(unittest.TestCase):
         self.assertEqual(command[-1], str(self.video))
         self.assertIn("Articulació 1 – Base", message)
 
-    def test_falls_back_to_xdg_open_without_vlc(self):
-        which = lambda name: "/usr/bin/xdg-open" if name == "xdg-open" else None  # noqa: E731
-        ok, message = robot_app.play_video(self.video, "Articulació 1 – Base", popen=self.popen, which=which)
+    def test_a_flatpak_vlc_keeps_its_launcher(self):
+        self.play(vlc=("/usr/bin/flatpak", "run", "org.videolan.VLC"))
+        self.assertEqual(self.calls[0][:4], ["/usr/bin/flatpak", "run", "org.videolan.VLC", "--play-and-exit"])
+
+    def test_falls_back_to_the_default_player_without_vlc(self):
+        ok, message = self.play(vlc=None, default_app="totem.desktop")
         self.assertTrue(ok)
         self.assertEqual(self.calls, [["/usr/bin/xdg-open", str(self.video)]])
         self.assertIn("no hi ha VLC", message)
 
-    def test_reports_a_missing_player(self):
-        ok, message = robot_app.play_video(self.video, "x", popen=self.popen, which=lambda name: None)
+    def test_reports_no_player_instead_of_a_silent_xdg_open(self):
+        ok, message = self.play(vlc=None, default_app="")
         self.assertFalse(ok)
         self.assertEqual(self.calls, [])
-        self.assertIn("VLC", message)
+        self.assertIn("sudo apt install vlc", message)
 
     def test_reports_a_missing_file(self):
-        ok, message = robot_app.play_video("/no/hi/es.mp4", "x", popen=self.popen,
-                                           which=lambda name: "/usr/bin/vlc")
+        ok, message = self.play(path="/no/hi/es.mp4")
         self.assertFalse(ok)
         self.assertEqual(self.calls, [])
         self.assertIn("baixar_videos.sh", message)
@@ -1152,9 +1160,25 @@ class VideoTests(unittest.TestCase):
     def test_reports_a_player_that_does_not_start(self):
         def broken(command, **kwargs):
             raise OSError("permís denegat")
-        ok, message = robot_app.play_video(self.video, "x", popen=broken, which=lambda name: "/usr/bin/vlc")
+        ok, message = self.play(popen=broken)
         self.assertFalse(ok)
         self.assertIn("permís denegat", message)
+
+    def test_find_vlc_looks_in_the_path_then_snap_then_flatpak(self):
+        none = lambda name: None  # noqa: E731
+        self.assertEqual(robot_app.find_vlc(which=lambda n: "/usr/bin/vlc" if n == "vlc" else None),
+                         ["/usr/bin/vlc"])
+        self.assertEqual(robot_app.find_vlc(which=none, exists=lambda p: p == "/snap/bin/vlc"),
+                         ["/snap/bin/vlc"])
+
+        class Done:
+            returncode = 0
+        flatpak = lambda n: "/usr/bin/flatpak" if n == "flatpak" else None  # noqa: E731
+        self.assertEqual(robot_app.find_vlc(which=flatpak, exists=lambda p: False, run=lambda *a, **k: Done()),
+                         ["/usr/bin/flatpak", "run", "org.videolan.VLC"])
+        Done.returncode = 1
+        self.assertIsNone(robot_app.find_vlc(which=flatpak, exists=lambda p: False, run=lambda *a, **k: Done()))
+        self.assertIsNone(robot_app.find_vlc(which=none, exists=lambda p: False))
 
 
 @unittest.skipUnless(HAS_DISPLAY, "no usable display for Tk")
