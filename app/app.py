@@ -184,6 +184,8 @@ VIDEOS = {
 # Each video has a thumbnail with the same name in GUIA_DIR / "imatges".
 GUIA_IMAGE_DIR = GUIA_DIR / "imatges"
 GUIA_FONT = ("Arial", 12)
+# The section list of the Guia tab: bigger than the rest, to hit it easily.
+GUIA_MENU_FONT = ("Arial", 14, "bold")
 # Every button in the top row is this wide, so they line up.
 BUTTON_WIDTH = 19
 # Corner radius of the buttons, in pixels.
@@ -1577,8 +1579,8 @@ class RobotApp:
         self._guide_widgets = []
 
         self.guide_list = tk.Listbox(
-            parent, width=20, activestyle="none", exportselection=False,
-            font=BOLD_FONT, bg=PANEL_BG, fg=FG, selectbackground=TEAL,
+            parent, width=18, activestyle="none", exportselection=False,
+            font=GUIA_MENU_FONT, bg=PANEL_BG, fg=FG, selectbackground=TEAL,
             selectforeground="#FFFFFF", highlightthickness=1, highlightbackground=TEAL,
             highlightcolor=CYAN, borderwidth=0,
         )

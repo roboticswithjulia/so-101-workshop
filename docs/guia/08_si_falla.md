@@ -28,7 +28,6 @@ No passa res: als enginyers de robòtica també els falla tot sovint. Busqueu el
 - Has escrit bé el nom de la funció? És **obrir_pinca**, sense ç.
 - Has tancat tots els parèntesis?
 - Els números decimals van amb **punt**, no amb coma: **2.5**, no 2,5.
-- Les línies de dins d'un **for** van amb 4 espais al davant.
 
 ## El braç no va on vull
 

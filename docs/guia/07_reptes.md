@@ -27,7 +27,7 @@ inici()
 Feu una torre de **3 o 4 blocs** i després desmunteu-la.
 
 - Cada bloc va una mica **més amunt** que l'anterior: el colze i l'espatlla canvien una mica a cada pis.
-- Primer feu-ho bloc a bloc. Quan funcioni, proveu de fer servir un **for**.
+- Feu-ho bloc a bloc: primer la torre amunt, després avall.
 
 ## Jenga Robòtic
 

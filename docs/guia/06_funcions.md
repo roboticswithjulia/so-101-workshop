@@ -53,13 +53,3 @@ Totes les funcions accepten **segons=** per decidir quant s'espera abans del pas
 ```
 anar_a(base=-30, espatlla=40, segons=2)
 ```
-
-## Repetir: for
-
-Per fer una cosa diverses vegades, fes servir **for**. Les línies de dins van amb 4 espais al davant.
-
-```
-for vegada in range(3):
-    obrir_pinca()
-    tancar_pinca()
-```
