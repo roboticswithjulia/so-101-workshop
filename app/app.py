@@ -36,6 +36,7 @@ from datetime import datetime
 try:
     import tkinter as tk
     from tkinter import filedialog, ttk
+    from tkinter import font as tkfont
 except ImportError:  # pragma: no cover - headless machines
     tk = None
 
@@ -190,8 +191,19 @@ GUIA_MENU_FONT = ("Arial", 12, "bold")
 BUTTON_WIDTH = 19
 # Corner radius of the buttons, in pixels.
 BUTTON_RADIUS = 8
+# Text size of the whole app except the Guia content, which has its own fonts.
+FONT_SIZE = 12
 # Buttons, joint names, panel titles and field labels are all bold.
-BOLD_FONT = ("Arial", 10, "bold")
+BOLD_FONT = ("Arial", FONT_SIZE, "bold")
+# Section titles, the status line and "Motors lliures".
+BIG_BOLD_FONT = ("Arial", FONT_SIZE + 1, "bold")
+# Hints under the panels and the column headers.
+SMALL_FONT = ("Arial", FONT_SIZE - 2)
+SMALL_BOLD_FONT = ("Arial", FONT_SIZE - 1, "bold")
+# The program editor.
+CODE_FONT = ("monospace", FONT_SIZE)
+# The buttons inside the guide text keep the size they had, to match the guide.
+GUIA_BUTTON_FONT = ("Arial", 10, "bold")
 # Light grey for the text on buttons and tabs, which sit on the logo teal.
 BUTTON_FG = "#D9D9D9"
 # How often the live angle of each joint is re-read while connected (milliseconds).
@@ -960,6 +972,13 @@ def apply_dark_theme(root):
     if "clam" in style.theme_names():
         style.theme_use("clam")
     root.configure(bg=BG)
+    # Every widget without a font of its own (entries, the log, dialogs) uses
+    # these named fonts, so they grow with FONT_SIZE too.
+    for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkFixedFont"):
+        try:
+            tkfont.nametofont(name, root=root).configure(size=FONT_SIZE)
+        except Exception:  # pragma: no cover - depends on the Tk build
+            pass
 
     style.configure(".", background=PANEL_BG, foreground=FG, fieldbackground=FIELD_BG,
                     bordercolor=TEAL, lightcolor=PANEL_BG, darkcolor=PANEL_BG)
@@ -972,7 +991,7 @@ def apply_dark_theme(root):
               indicatorcolor=[("selected", CYAN), ("!selected", FIELD_BG)])
     # "Motors lliures" is the one control that must be easy to hit in a hurry.
     style.configure("Big.TCheckbutton", background=BG, foreground=FG,
-                    font=("Arial", 11, "bold"), indicatorsize=14, padding=(4, 3))
+                    font=BIG_BOLD_FONT, indicatorsize=16, padding=(4, 3))
     style.map("Big.TCheckbutton",
               background=[("active", BG)],
               foreground=[("disabled", MUTED_FG)],
@@ -1002,7 +1021,7 @@ def apply_dark_theme(root):
     # Buttons inside the light grey guide text: the rounded corners must blend
     # with that grey, not with the window.
     style.configure("Guide.TButton", background=TEXT_BG, foreground=BUTTON_FG,
-                    focuscolor=CYAN, padding=(6, 4), font=BOLD_FONT)
+                    focuscolor=CYAN, padding=(6, 4), font=GUIA_BUTTON_FONT)
     style.map("Guide.TButton",
               background=[("pressed", TEXT_BG), ("active", TEXT_BG), ("disabled", TEXT_BG)],
               foreground=[("active", BG), ("disabled", MUTED_FG)])
@@ -1030,7 +1049,7 @@ def apply_dark_theme(root):
     # The tab you are on is the logo teal; the ones you can switch to are black.
     # The selected tab is the logo teal and grows, so it reads as the one you are on.
     style.configure("TNotebook.Tab", background=TAB_BG, foreground=BUTTON_FG,
-                    padding=(10, 4), font=("Arial", 10))
+                    padding=(10, 4), font=("Arial", FONT_SIZE))
     style.map("TNotebook.Tab",
               background=[("selected", TEAL), ("active", CYAN)],
               foreground=[("selected", BUTTON_FG), ("active", BG)],
@@ -1088,7 +1107,7 @@ def ask_si_no(parent, title, text):
         answer["value"] = value
         dialog.destroy()
 
-    ttk.Label(dialog, text=text, wraplength=400, justify="left", padding=(20, 20, 20, 12)).pack(fill="x")
+    ttk.Label(dialog, text=text, wraplength=480, justify="left", padding=(20, 20, 20, 12)).pack(fill="x")
     buttons = ttk.Frame(dialog, padding=(20, 0, 20, 20))
     buttons.pack(fill="x")
     yes_button = ttk.Button(buttons, text=TEXTS["yes"], command=lambda: choose(True), width=10)
@@ -1324,8 +1343,8 @@ class RobotApp:
         self._button_images = rounded_button_style(self.style, root)
         self._tab_images = rounded_tab_style(self.style, root)
         root.title(TEXTS["window_title"])
-        root.geometry("800x860")
-        root.minsize(700, 680)
+        root.geometry("920x980")
+        root.minsize(820, 760)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         frame = ttk.Frame(root, padding=20)
@@ -1335,11 +1354,11 @@ class RobotApp:
         header.pack(fill="x")
         titles = ttk.Frame(header)
         titles.pack(side="left", fill="x", expand=True)
-        ttk.Label(titles, text=TEXTS["title"], font=("Arial", 20, "bold"), style="Title.TLabel").pack(anchor="w")
+        ttk.Label(titles, text=TEXTS["title"], font=("Arial", FONT_SIZE + 10, "bold"), style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             titles,
             text=TEXTS["intro"].format(first=ids[0], last=ids[-1], port=port),
-            wraplength=600,
+            wraplength=680,
             justify="left",
         ).pack(anchor="w", pady=(8, 12))
         # Keep a reference: Tk drops an image that nothing else holds.
@@ -1390,8 +1409,8 @@ class RobotApp:
         self._build_guide_tab(guide_tab)
 
         self.status_var = tk.StringVar(value=TEXTS["ready"])
-        ttk.Label(frame, textvariable=self.status_var, wraplength=720, justify="left",
-                  font=("Arial", 11, "bold"), style="Status.TLabel").pack(
+        ttk.Label(frame, textvariable=self.status_var, wraplength=860, justify="left",
+                  font=BIG_BOLD_FONT, style="Status.TLabel").pack(
             anchor="w", pady=(12, 6)
         )
 
@@ -1411,7 +1430,7 @@ class RobotApp:
         box = ttk.LabelFrame(parent, text=TEXTS["joints"], padding=(12, 8))
         box.pack(fill="x")
         box.grid_columnconfigure(1, weight=1)
-        header_font = ("Arial", 9, "bold")
+        header_font = SMALL_BOLD_FONT
         ttk.Label(box, style="Panel.TLabel", text=TEXTS["col_current"], font=header_font).grid(row=0, column=2, sticky="e")
         ttk.Label(box, style="Panel.TLabel", text=TEXTS["col_position"], font=header_font).grid(row=0, column=3, columnspan=2, sticky="e")
         ttk.Label(box, style="Panel.TLabel", text=TEXTS["col_min"], font=header_font).grid(row=0, column=5, sticky="e", padx=(12, 0))
@@ -1435,7 +1454,7 @@ class RobotApp:
             scale.grid(row=row, column=1, sticky="ew", padx=8)
             # Column 2 shows what the servo actually reports, refreshed from the
             # arm, so it is right even while the motors are free and posed by hand.
-            value_label = ttk.Label(box, text="--", width=7, anchor="e", font=("Arial", 10, "bold"),
+            value_label = ttk.Label(box, text="--", width=7, anchor="e", font=BOLD_FONT,
                                     style="Accent.TLabel")
             value_label.grid(row=row, column=2, sticky="e", padx=(6, 0))
             entry_var = tk.StringVar(value="0")
@@ -1460,7 +1479,7 @@ class RobotApp:
             self.value_labels[servo_id] = value_label
             self.entry_vars[servo_id] = entry_var
             self.limit_vars[servo_id] = (low_var, high_var)
-        ttk.Label(box, text=TEXTS["entry_hint"], font=("Arial", 8), style="Hint.TLabel").grid(
+        ttk.Label(box, text=TEXTS["entry_hint"], font=SMALL_FONT, style="Hint.TLabel").grid(
             row=len(JOINTS) + 1, column=3, columnspan=4, sticky="e", pady=(2, 0)
         )
 
@@ -1511,18 +1530,18 @@ class RobotApp:
         ttk.Label(
             box,
             text=TEXTS["motion_hint"].format(smin=SPEED_MIN, smax=SPEED_MAX, amin=ACC_MIN, amax=ACC_MAX),
-            font=("Arial", 8),
+            font=SMALL_FONT,
             style="Hint.TLabel",
-            wraplength=600,
+            wraplength=760,
             justify="left",
         ).pack(anchor="w", pady=(6, 0))
 
     def _build_program_tab(self, parent):
-        ttk.Label(parent, text=TEXTS["program_title"], font=("Arial", 11, "bold")).pack(anchor="w")
+        ttk.Label(parent, text=TEXTS["program_title"], font=BIG_BOLD_FONT).pack(anchor="w")
 
         editor = ttk.Frame(parent)
         editor.pack(fill="both", expand=True, pady=(6, 0))
-        self.code_box = tk.Text(editor, height=14, wrap="none", font=("monospace", 10), undo=True)
+        self.code_box = tk.Text(editor, height=14, wrap="none", font=CODE_FONT, undo=True)
         scroll = ttk.Scrollbar(editor, orient="vertical", command=self.code_box.yview)
         self.code_box.configure(yscrollcommand=scroll.set)
         self.code_box.pack(side="left", fill="both", expand=True)
@@ -1559,9 +1578,9 @@ class RobotApp:
         self.program_reset_button.pack(side="right", padx=(0, 8))
 
         self.task_step_var = tk.StringVar(value="")
-        ttk.Label(parent, textvariable=self.task_step_var, wraplength=700, justify="left",
+        ttk.Label(parent, textvariable=self.task_step_var, wraplength=860, justify="left",
                   font=BOLD_FONT).pack(anchor="w", pady=(8, 0))
-        ttk.Label(parent, text=TEXTS["program_hint"], font=("Arial", 8), wraplength=700, justify="left",
+        ttk.Label(parent, text=TEXTS["program_hint"], font=SMALL_FONT, wraplength=860, justify="left",
                   style="Hint.TLabel").pack(
             anchor="w", pady=(2, 0)
         )
