@@ -1040,3 +1040,160 @@ class RoundedTabTests(unittest.TestCase):
             self.assertEqual(style.layout("TNotebook.Tab")[0][0], "Rounded.tab")
         finally:
             root.destroy()
+
+
+class GuideParserTests(unittest.TestCase):
+    def test_parse_guia_reads_every_kind_of_block(self):
+        text = (
+            "# Títol\n\nUna frase\nque continua.\n\n## Apartat\n- un punt\n1. primer pas\n"
+            "> ⚠ Compte\n![](imatges/x.png)\n[video:3]\n```\nanar_a(base=1)\n    inici()\n```\n"
+        )
+        self.assertEqual(robot_app.parse_guia(text), [
+            ("title", "Títol"),
+            ("paragraph", "Una frase que continua."),
+            ("heading", "Apartat"),
+            ("bullet", "un punt"),
+            ("number", (1, "primer pas")),
+            ("warning", "⚠ Compte"),
+            ("image", "imatges/x.png"),
+            ("video", 3),
+            ("code", "anar_a(base=1)\n    inici()"),
+        ])
+
+    def test_an_unclosed_code_block_still_shows(self):
+        self.assertEqual(robot_app.parse_guia("```\ninici()"), [("code", "inici()")])
+
+    def test_split_bold(self):
+        self.assertEqual(robot_app.split_bold("a **b** c"), [("a ", False), ("b", True), (" c", False)])
+        self.assertEqual(robot_app.split_bold("**tot**"), [("tot", True)])
+
+    def test_load_guia_takes_the_title_from_the_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with open(os.path.join(folder, "02_b.md"), "w", encoding="utf-8") as handle:
+                handle.write("# Segona\n")
+            with open(os.path.join(folder, "01_a.md"), "w", encoding="utf-8") as handle:
+                handle.write("sense títol\n")
+            titles = [title for title, _ in robot_app.load_guia(folder)]
+        self.assertEqual(titles, ["01_a", "Segona"])
+
+
+class GuideContentTests(unittest.TestCase):
+    """The guide that ships with the app: every image and video it names exists."""
+
+    def test_the_guide_has_sections(self):
+        self.assertGreaterEqual(len(robot_app.load_guia()), 8)
+
+    def test_every_image_and_video_exists(self):
+        for title, blocks in robot_app.load_guia():
+            for kind, content in blocks:
+                if kind == "image":
+                    self.assertTrue((robot_app.GUIA_DIR / content).exists(), f"{title}: {content}")
+                elif kind == "video":
+                    self.assertIn(content, robot_app.VIDEOS, f"{title}: [video:{content}]")
+                    self.assertTrue(robot_app.video_path(content).exists(), f"{title}: vídeo {content}")
+                    self.assertTrue(robot_app.video_thumbnail(content).exists(), f"{title}: miniatura {content}")
+
+    def test_the_assembly_section_shows_every_joint_video(self):
+        videos = {content for _, blocks in robot_app.load_guia()
+                  for kind, content in blocks if kind == "video"}
+        self.assertEqual(videos, set(robot_app.VIDEOS))
+
+    def test_every_code_example_is_a_valid_program(self):
+        for title, blocks in robot_app.load_guia():
+            for kind, content in blocks:
+                if kind == "code" and "→" not in content:  # the wiring chain is a diagram
+                    steps, error = robot_app.run_program(content)
+                    self.assertIsNone(error, f"{title}: {content}")
+
+
+class VideoTests(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        self.popen = lambda command, **kwargs: self.calls.append(command)
+        self.video = robot_app.video_path(1)
+
+    def test_video_title_uses_the_joint_names_of_the_app(self):
+        self.assertEqual(robot_app.video_title(1), "Articulació 1 – Base")
+        self.assertEqual(robot_app.video_title(2), "Articulació 2 – Espatlla")
+        self.assertEqual(robot_app.video_title(6), "Articulació 6 – Pinça")
+
+    def test_vlc_shows_the_joint_name(self):
+        ok, message = robot_app.play_video(self.video, "Articulació 1 – Base", popen=self.popen,
+                                           which=lambda name: f"/usr/bin/{name}")
+        self.assertTrue(ok)
+        command = self.calls[0]
+        self.assertEqual(command[0], "/usr/bin/vlc")
+        self.assertIn("--video-title=Articulació 1 – Base", command)
+        self.assertIn("--meta-title=Articulació 1 – Base", command)
+        self.assertIn("--marq-marquee=Articulació 1 – Base", command)
+        self.assertEqual(command[-1], str(self.video))
+        self.assertIn("Articulació 1 – Base", message)
+
+    def test_falls_back_to_xdg_open_without_vlc(self):
+        which = lambda name: "/usr/bin/xdg-open" if name == "xdg-open" else None  # noqa: E731
+        ok, message = robot_app.play_video(self.video, "Articulació 1 – Base", popen=self.popen, which=which)
+        self.assertTrue(ok)
+        self.assertEqual(self.calls, [["/usr/bin/xdg-open", str(self.video)]])
+        self.assertIn("no hi ha VLC", message)
+
+    def test_reports_a_missing_player(self):
+        ok, message = robot_app.play_video(self.video, "x", popen=self.popen, which=lambda name: None)
+        self.assertFalse(ok)
+        self.assertEqual(self.calls, [])
+        self.assertIn("VLC", message)
+
+    def test_reports_a_missing_file(self):
+        ok, message = robot_app.play_video("/no/hi/es.mp4", "x", popen=self.popen,
+                                           which=lambda name: "/usr/bin/vlc")
+        self.assertFalse(ok)
+        self.assertEqual(self.calls, [])
+        self.assertIn("baixar_videos.sh", message)
+
+    def test_reports_a_player_that_does_not_start(self):
+        def broken(command, **kwargs):
+            raise OSError("permís denegat")
+        ok, message = robot_app.play_video(self.video, "x", popen=broken, which=lambda name: "/usr/bin/vlc")
+        self.assertFalse(ok)
+        self.assertIn("permís denegat", message)
+
+
+@unittest.skipUnless(HAS_DISPLAY, "no usable display for Tk")
+class GuideTabTests(unittest.TestCase):
+    def setUp(self):
+        self.root = robot_app.tk.Tk()
+        self.root.withdraw()
+        self.app = robot_app.RobotApp(self.root, "/dev/fake", 1000000, list(range(1, 7)))
+
+    def tearDown(self):
+        self.root.destroy()
+
+    def test_the_guide_is_the_third_tab(self):
+        tabs = [self.app.notebook.tab(tab, "text") for tab in self.app.notebook.tabs()]
+        self.assertEqual(tabs, ["Control", "Programa", "Guia"])
+
+    def test_every_section_renders(self):
+        self.assertEqual(self.app.guide_list.size(), len(self.app.guide_sections))
+        for index, (title, _) in enumerate(self.app.guide_sections):
+            self.app.show_guide_section(index)
+            self.assertTrue(self.app.guide_text.get("1.0", "end").startswith(title))
+
+    def test_the_assembly_section_embeds_a_video_per_joint(self):
+        titles = [title for title, _ in self.app.guide_sections]
+        self.app.show_guide_section(titles.index("Muntatge"))
+        self.assertEqual(len(self.app._guide_widgets), len(robot_app.VIDEOS))
+
+    def test_open_video_reports_on_the_status_line(self):
+        original = robot_app.play_video
+        seen = []
+        robot_app.play_video = lambda path, title: (seen.append((path, title)), (True, "Obrint"))[1]
+        try:
+            self.assertTrue(self.app.open_video(3))
+        finally:
+            robot_app.play_video = original
+        self.assertEqual(seen, [(robot_app.video_path(3), "Articulació 3 – Colze")])
+        self.assertEqual(self.app.status_var.get(), "Obrint")
+
+    def test_copy_to_program_appends_the_example(self):
+        self.app.set_program_code("inici()\n")
+        self.app.copy_to_program("esperar(2)\n")
+        self.assertEqual(self.app.program_code(), "inici()\n\nesperar(2)\n")
