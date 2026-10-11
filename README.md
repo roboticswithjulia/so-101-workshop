@@ -122,24 +122,7 @@ The second row of the panel holds the **step durations**: how long the program w
 
 ### Programa tab
 
-This is where the task is written and run. The editor opens with the Repte 1 template: the functions are written already and teams only complete the coordinates.
-
-```python
-inici()
-anar_a(base=-3, espatlla=48, colze=14, canell=-25, gir=-6)
-tancar_pinca(-40)
-esperar(0.5)
-
-anar_a(base=-3, espatlla=27, colze=15, canell=-7, gir=-6)
-anar_a(base=14, espatlla=22, colze=14, canell=-3, gir=-6)
-
-anar_a(base=32, espatlla=66, colze=45, canell=-16, gir=-6)
-obrir_pinca(10)
-
-anar_a(base=31, espatlla=36, colze=18, canell=-16, gir=-6)
-
-inici()
-```
+This is where the task is written and run. The editor opens with only the comments of the Repte 1 template: what the task is, how to add a position and the list of functions below. Each team writes its own program under them. **Exemple** puts those comments back.
 
 | Function | What it does |
 |---|---|
@@ -163,7 +146,7 @@ All of them accept `segons=` to override the default duration, and `for` loops w
 
 Freezing commands every servo the position it currently reads, with the torque left on, so the arm never goes limp. While a program runs, the editor, the sliders and the other buttons are disabled.
 
-Errors are reported in Catalan: a syntax error gives the line number, an unknown function gives the name. A program is capped at 200 steps, so a runaway `while True` is caught rather than run, and the code runs with a restricted set of builtins, so imports, `open` and `eval` are unreachable. **Desar** and **Carregar** write and read the program as a `.py` file, and **Exemple** restores the template.
+Errors are reported in Catalan: a syntax error gives the line number, an unknown function gives the name. A program is capped at 200 steps, so a runaway `while True` is caught rather than run, and the code runs with a restricted set of builtins, so imports, `open` and `eval` are unreachable. **Desar** and **Carregar** write and read the program as a `.py` file.
 
 ### Guia tab
 

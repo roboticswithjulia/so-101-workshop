@@ -70,10 +70,11 @@ POSICIO_INTERMITJA = {1: 21, 2: 15, 3: 10, 4: 0, 5: 0}
 PINCA_OBERTA, PINCA_TANCADA = 13, -13
 
 
-# Programa d'exemple de la pestanya "Programa". Els participants només han de
-# completar les coordenades; les funcions de moviment ja estan fetes.
+# Programa d'exemple de la pestanya "Programa": només els comentaris, perquè
+# cada equip escrigui el seu programa des de zero.
 PROGRAMA_EXEMPLE = """# Repte 1: agafa l'objecte i deixa'l a l'altra posició.
-# Només has d'ajustar les coordenades (graus respecte de la posició zero).
+# Escriu el teu programa a sota. Les coordenades són graus respecte de la
+# posició zero.
 #
 # Per posar-hi una posició: mou el braç fins on el vulguis (pots marcar
 # «Motors lliures» a la pestanya Control i moure'l a mà) i prem
@@ -89,20 +90,6 @@ PROGRAMA_EXEMPLE = """# Repte 1: agafa l'objecte i deixa'l a l'altra posició.
 # Les articulacions que no escriguis es queden on són, i totes les funcions
 # accepten segons= per canviar quant s'espera abans del pas següent.
 
-inici()
-anar_a(base=-3, espatlla=48, colze=14, canell=-25, gir=-6)
-tancar_pinca(-40)
-esperar(0.5)
-
-anar_a(base=-3, espatlla=27, colze=15, canell=-7, gir=-6)
-anar_a(base=14, espatlla=22, colze=14, canell=-3, gir=-6)
-
-anar_a(base=32, espatlla=66, colze=45, canell=-16, gir=-6)
-obrir_pinca(10)
-
-anar_a(base=31, espatlla=36, colze=18, canell=-16, gir=-6)
-
-inici()
 """
 
 # (servo id, Catalan name, minimum degrees, maximum degrees, direction) relative

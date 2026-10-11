@@ -217,8 +217,8 @@ class TaskDefinitionTests(unittest.TestCase):
             self.assertEqual(len(errors), 1, pose)
             self.assertIn("la posició ha de ser", errors[0])
 
-    def test_validate_task_accepts_the_example_program(self):
-        steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
+    def test_validate_task_accepts_the_default_gripper_angles(self):
+        steps, error = robot_app.run_program("inici()\nobrir_pinca()\ntancar_pinca()\n")
 
         self.assertIsNone(error)
         # PINCA_OBERTA and PINCA_TANCADA sit exactly on joint 6's limits.
@@ -548,18 +548,6 @@ class ProgramTests(unittest.TestCase):
 
     def names(self, steps):
         return [step.name for step in steps]
-
-    def test_the_example_program_builds_a_valid_task(self):
-        """The template is edited for each workshop, so only check that it runs."""
-        steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
-
-        self.assertIsNone(error)
-        self.assertEqual(robot_app.validate_task(steps), [])
-        self.assertGreater(len(steps), 1)
-        # It must grip the object and then release it, whatever angles it uses.
-        names = [step.name for step in steps]
-        self.assertLess(names.index(robot_app.TEXTS["program_step_close"]),
-                        names.index(robot_app.TEXTS["program_step_open"]))
 
     def test_a_pose_only_moves_the_joints_the_participant_gave(self):
         steps, _ = robot_app.run_program("anar_a(base=10)")
@@ -911,23 +899,17 @@ class GripperAngleTests(unittest.TestCase):
 
 
 class DefaultProgramTests(unittest.TestCase):
-    def test_the_default_program_runs_and_validates(self):
+    def test_the_default_program_is_only_comments(self):
+        lines = [line.strip() for line in robot_app.PROGRAMA_EXEMPLE.splitlines() if line.strip()]
+
+        self.assertTrue(lines)
+        self.assertTrue(all(line.startswith("#") for line in lines))
+
+    def test_running_it_asks_for_a_move(self):
         steps, error = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
 
-        self.assertIsNone(error)
-        self.assertEqual(len(steps), len([
-            line for line in robot_app.PROGRAMA_EXEMPLE.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]))
-        self.assertEqual(robot_app.validate_task(steps), [])
-
-    def test_it_starts_at_home_and_grips_before_releasing(self):
-        steps, _ = robot_app.run_program(robot_app.PROGRAMA_EXEMPLE)
-        names = [step.name for step in steps]
-
-        self.assertEqual(names[0], TEXTS_HOME := robot_app.TEXTS["program_step_home"])
-        self.assertLess(names.index(robot_app.TEXTS["program_step_close"]),
-                        names.index(robot_app.TEXTS["program_step_open"]))
+        self.assertIsNone(steps)
+        self.assertEqual(error, robot_app.TEXTS["program_no_steps"])
 
 
 class StepDurationTests(unittest.TestCase):
